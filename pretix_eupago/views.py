@@ -7,6 +7,7 @@ from django.http import HttpResponse, HttpResponseBadRequest
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from django_scopes import scopes_disabled
 
 from pretix.base.models import OrderPayment
 
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
+@method_decorator(scopes_disabled(), name="dispatch")
 class EupagoWebhookView(View):
     """
     Handles both euPago webhook formats:

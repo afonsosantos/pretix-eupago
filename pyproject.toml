@@ -25,6 +25,15 @@ classifiers = [
     "Programming Language :: Python :: 3",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pretix",
+    "pytest",
+    "pytest-django",
+    "responses",
+    "django-scopes",
+]
+
 [project.urls]
 Homepage = "https://github.com/afonsosantos/pretix-eupago"
 
@@ -36,3 +45,7 @@ include = ["pretix_eupago*"]
 
 [tool.setuptools.package-data]
 pretix_eupago = ["templates/**/*"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "tests.settings"
+python_files = "test_*.py"
