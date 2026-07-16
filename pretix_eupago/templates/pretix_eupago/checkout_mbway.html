@@ -1,0 +1,21 @@
+{% load i18n %}
+<div class="eupago-checkout eupago-mbway">
+    <p>
+        {% blocktrans trimmed %}
+            You will receive a payment request in the <strong>MB WAY app</strong> on your phone.
+            You have <strong>5 minutes</strong> to approve it after placing your order.
+        {% endblocktrans %}
+    </p>
+    {% if phone %}
+    <p>
+        {% blocktrans trimmed with phone=phone %}
+            Payment request will be sent to: <strong>{{ phone }}</strong>
+        {% endblocktrans %}
+    </p>
+    {% endif %}
+    <p class="text-muted">
+        {% blocktrans trimmed %}
+            Make sure your phone is on and the MB WAY app is active before confirming.
+        {% endblocktrans %}
+    </p>
+</div>

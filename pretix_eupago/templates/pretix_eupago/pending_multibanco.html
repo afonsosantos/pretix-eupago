@@ -1,0 +1,36 @@
+{% load i18n %}
+{% load money %}
+<div class="eupago-pending eupago-multibanco">
+    {% if info.referencia %}
+    <table class="table">
+        <tbody>
+            <tr>
+                <th>{% trans "Entity" %}</th>
+                <td><strong>{{ info.entidade }}</strong></td>
+            </tr>
+            <tr>
+                <th>{% trans "Reference" %}</th>
+                <td><strong>{{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}</strong></td>
+            </tr>
+            <tr>
+                <th>{% trans "Amount" %}</th>
+                <td><strong>{{ payment.amount|money:payment.order.event.currency }}</strong></td>
+            </tr>
+            {% if info.expiry %}
+            <tr>
+                <th>{% trans "Valid until" %}</th>
+                <td>{{ info.expiry }}</td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+    <p class="text-muted">
+        {% blocktrans trimmed %}
+            Pay at any ATM (Caixa Automático) or through your bank's online portal (homebanking).
+            Your order will be confirmed automatically once the payment is received.
+        {% endblocktrans %}
+    </p>
+    {% else %}
+    <p>{% trans "Payment reference is being generated. Please refresh this page in a moment." %}</p>
+    {% endif %}
+</div>

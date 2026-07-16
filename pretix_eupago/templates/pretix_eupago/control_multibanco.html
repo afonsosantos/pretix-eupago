@@ -1,0 +1,24 @@
+{% load i18n %}
+{% load money %}
+<div class="eupago-control eupago-multibanco">
+    {% if info.referencia %}
+    <dl class="dl-horizontal">
+        <dt>{% trans "Entity" %}</dt>
+        <dd>{{ info.entidade }}</dd>
+        <dt>{% trans "Reference" %}</dt>
+        <dd>{{ info.referencia }}</dd>
+        <dt>{% trans "Amount" %}</dt>
+        <dd>{{ payment.amount|money:payment.order.event.currency }}</dd>
+        {% if info.expiry %}
+        <dt>{% trans "Valid until" %}</dt>
+        <dd>{{ info.expiry }}</dd>
+        {% endif %}
+        {% if info.identifier %}
+        <dt>{% trans "Identifier" %}</dt>
+        <dd>{{ info.identifier }}</dd>
+        {% endif %}
+    </dl>
+    {% else %}
+    <p class="text-muted">{% trans "No Multibanco reference on record." %}</p>
+    {% endif %}
+</div>

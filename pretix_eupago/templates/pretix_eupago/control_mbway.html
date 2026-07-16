@@ -1,0 +1,19 @@
+{% load i18n %}
+<div class="eupago-control eupago-mbway">
+    {% if info.transactionID %}
+    <dl class="dl-horizontal">
+        <dt>{% trans "Transaction ID" %}</dt>
+        <dd>{{ info.transactionID }}</dd>
+        {% if info.phone %}
+        <dt>{% trans "Phone" %}</dt>
+        <dd>{{ info.phone }}</dd>
+        {% endif %}
+        {% if info.identifier %}
+        <dt>{% trans "Identifier" %}</dt>
+        <dd>{{ info.identifier }}</dd>
+        {% endif %}
+    </dl>
+    {% else %}
+    <p class="text-muted">{% trans "No MB WAY transaction on record." %}</p>
+    {% endif %}
+</div>

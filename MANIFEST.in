@@ -1,0 +1,3 @@
+include README.rst LICENSE
+recursive-include pretix_eupago/templates *
+recursive-include pretix_eupago/locale *

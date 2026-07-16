@@ -1,0 +1,22 @@
+{% load i18n %}
+<div class="eupago-pending eupago-mbway">
+    <p>
+        {% blocktrans trimmed %}
+            A payment request has been sent to your MB WAY app.
+            Please open the app and approve the payment within <strong>5 minutes</strong>.
+        {% endblocktrans %}
+    </p>
+    {% if info.phone %}
+    <p class="text-muted">
+        {% blocktrans trimmed with phone=info.phone %}
+            Sent to: {{ phone }}
+        {% endblocktrans %}
+    </p>
+    {% endif %}
+    <p class="text-muted">
+        {% blocktrans trimmed %}
+            Your order will be confirmed automatically once the payment is approved.
+            If the request expires, you can retry the payment from your order page.
+        {% endblocktrans %}
+    </p>
+</div>
