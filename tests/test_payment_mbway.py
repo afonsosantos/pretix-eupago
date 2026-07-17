@@ -12,10 +12,9 @@ from .conftest import make_payment
 
 @pytest.fixture
 def provider(event):
-    p = EupagoMBWAY(event)
-    p.settings.set("api_key", "test-api-key")
-    p.settings.set("sandbox", True)
-    return p
+    event.settings.set("eupago_api_key", "test-api-key")
+    event.settings.set("eupago_sandbox", True)
+    return EupagoMBWAY(event)
 
 
 @pytest.mark.django_db

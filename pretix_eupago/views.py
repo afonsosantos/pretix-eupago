@@ -3,15 +3,47 @@ import hmac
 import json
 import logging
 
+from django import forms
 from django.http import HttpResponse, HttpResponseBadRequest
+from django.urls import reverse
 from django.utils.decorators import method_decorator
+from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_scopes import scopes_disabled
 
-from pretix.base.models import OrderPayment
+from pretix.base.forms import SettingsForm
+from pretix.base.models import Event, OrderPayment
+from pretix.control.views.event import (
+    EventSettingsFormView, EventSettingsViewMixin,
+)
 
 logger = logging.getLogger(__name__)
+
+
+class EupagoSettingsForm(SettingsForm):
+    eupago_api_key = forms.CharField(
+        label=_("API Key"),
+        help_text=_("Your euPago API key, found in Backoffice → Channels → Channel Listing."),
+    )
+    eupago_sandbox = forms.BooleanField(
+        label=_("Sandbox / Test mode"),
+        required=False,
+        help_text=_("Use the euPago sandbox environment for testing."),
+    )
+
+
+class EupagoSettings(EventSettingsViewMixin, EventSettingsFormView):
+    model = Event
+    form_class = EupagoSettingsForm
+    template_name = "pretix_eupago/settings.html"
+    permission = "event.settings.payment:write"
+
+    def get_success_url(self) -> str:
+        return reverse("plugins:pretix_eupago:settings", kwargs={
+            "organizer": self.request.event.organizer.slug,
+            "event": self.request.event.slug,
+        })
 
 
 @method_decorator(csrf_exempt, name="dispatch")

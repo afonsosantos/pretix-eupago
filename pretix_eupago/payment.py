@@ -7,6 +7,7 @@ import requests
 from django import forms
 from django.http import HttpRequest
 from django.template.loader import get_template
+from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from pretix.base.models import OrderPayment
@@ -28,28 +29,52 @@ MULTIBANCO_EXPIRY_DAYS = 7
 
 
 class EupagoSettingsMixin:
+    """
+    API key and sandbox mode are shared by every euPago payment method, so they live on the
+    plugin's own settings page (``EupagoSettings``/``eupago_api_key``/``eupago_sandbox`` on
+    ``event.settings``) rather than being duplicated in each provider's settings_form_fields.
+    """
+
+    @property
+    def _is_sandbox(self):
+        return self.event.settings.get("eupago_sandbox", as_type=bool, default=False)
+
+    @property
+    def _api_key(self):
+        return self.event.settings.get("eupago_api_key", default="")
+
+    def _env(self):
+        return "sandbox" if self._is_sandbox else "production"
+
+    @property
+    def test_mode_message(self):
+        if self._is_sandbox:
+            return _("euPago sandbox mode is active. No real payments will be processed.")
+        return None
+
+    def settings_content_render(self, request) -> str:
+        url = reverse("plugins:pretix_eupago:settings", kwargs={
+            "organizer": self.event.organizer.slug,
+            "event": self.event.slug,
+        })
+        return (
+            "<p>{} <a href=\"{}\">{}</a></p>"
+        ).format(
+            _("The API key and sandbox mode are configured on the"),
+            url,
+            _("general euPago settings page"),
+        )
+
+
+class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
+    identifier = "eupago_multibanco"
+    verbose_name = _("Multibanco (euPago)")
+    public_name = _("Multibanco")
+
     @property
     def settings_form_fields(self):
         fields = OrderedDict(
             [
-                (
-                    "api_key",
-                    forms.CharField(
-                        label=_("API Key"),
-                        help_text=_(
-                            "Your euPago API key, found in Backoffice → Channels → Channel Listing."
-                        ),
-                    ),
-                ),
-                (
-                    "sandbox",
-                    forms.BooleanField(
-                        label=_("Sandbox / Test mode"),
-                        required=False,
-                        initial=False,
-                        help_text=_("Use the euPago sandbox environment for testing."),
-                    ),
-                ),
                 (
                     "multibanco_expiry_days",
                     forms.IntegerField(
@@ -65,30 +90,7 @@ class EupagoSettingsMixin:
         )
         return OrderedDict(list(super().settings_form_fields.items()) + list(fields.items()))
 
-    @property
-    def _is_sandbox(self):
-        return self.settings.get("sandbox", as_type=bool, default=False)
-
-    @property
-    def _api_key(self):
-        return self.settings.get("api_key", default="")
-
-    def _env(self):
-        return "sandbox" if self._is_sandbox else "production"
-
-    @property
-    def test_mode_message(self):
-        if self._is_sandbox:
-            return _("euPago sandbox mode is active. No real payments will be processed.")
-        return None
-
-
-class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
-    identifier = "eupago_multibanco"
-    verbose_name = _("Multibanco (euPago)")
-    public_name = _("Multibanco")
-
-    # No form fields needed — Multibanco references are generated server-side.
+    # No checkout form fields needed — Multibanco references are generated server-side.
     @property
     def payment_form_fields(self):
         return OrderedDict()

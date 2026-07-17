@@ -19,6 +19,9 @@ class PluginApp(PluginConfig):
         version = __version__
         category = "PAYMENT"
         compatibility = "pretix>=4.0.0"
+        settings_links = [
+            ((_("Payment"), _("euPago")), "plugins:pretix_eupago:settings", {}),
+        ]
 
     def ready(self):
         from . import signals  # NOQA

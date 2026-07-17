@@ -29,11 +29,12 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
 - `pretix_eupago/signals.py` — connects to pretix's `register_payment_providers` signal to expose the
   two payment provider classes to pretix core.
 - `pretix_eupago/payment.py` — the core logic, two `BasePaymentProvider` subclasses sharing
-  `EupagoSettingsMixin` (API key, sandbox toggle, Multibanco expiry days, all read via `self.settings`,
-  pretix's per-event hierarkey settings store):
-  - `EupagoMultibanco` — no checkout form fields; `execute_payment` calls euPago's `multibanco/create`
-    REST API and stores `referencia`/`entidade`/expiry in `payment.info` (JSON). Payment stays pending
-    until the webhook confirms it.
+  `EupagoSettingsMixin`:
+  - `EupagoMultibanco` — no checkout form fields, but has its own `settings_form_fields` override for
+    `multibanco_expiry_days` (provider-specific, read via `self.settings`, pretix's per-provider
+    `SettingsSandbox`). `execute_payment` calls euPago's `multibanco/create` REST API and stores
+    `referencia`/`entidade`/expiry in `payment.info` (JSON). Payment stays pending until the webhook
+    confirms it.
   - `EupagoMBWAY` — checkout form collects a phone number (also has a `payment_prepare` path for the
     "retry payment" flow on the order page); `execute_payment` normalizes the phone to euPago's
     `351#XXXXXXXXX` format and calls `mbway/create`. Also pending until webhook confirmation.
@@ -42,6 +43,25 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     phone number; Multibanco has nothing to shred).
   - Neither provider implements `execute_refund` — refunds are not currently supported and must be
     handled manually/out-of-band.
+- `EupagoSettingsMixin` (top of `payment.py`) holds only what's genuinely shared: `_api_key`,
+  `_is_sandbox`, `_env()`, `test_mode_message`, and `settings_content_render` (a link back to the
+  shared settings page, shown on each provider's own settings screen so admins don't go looking for a
+  field that isn't there anymore). It deliberately does **not** override `settings_form_fields` — see
+  below for why the API key/sandbox fields live elsewhere.
+- `pretix_eupago/views.py` also defines `EupagoSettingsForm` (a `pretix.base.forms.SettingsForm`) and
+  `EupagoSettings` (`EventSettingsViewMixin` + `EventSettingsFormView`) — a single Control-panel page,
+  shared across both payment methods, holding `eupago_api_key` and `eupago_sandbox`. These are read
+  directly off `event.settings` (not a provider's `SettingsSandbox`) by `EupagoSettingsMixin`, since
+  `SettingsSandbox` always prefixes keys per-provider (`payment_<identifier>_...`) and there is no
+  built-in way to share one field across providers other than storing it unprefixed on `event.settings`
+  and having each provider read it directly. `permission = "event.settings.payment:write"`.
+  - `pretix_eupago/urls.py` registers this at a literal `control/event/<organizer>/<event>/eupago/settings`
+    path (not `event_patterns` — those are for the presale/frontend side; Control-panel plugin pages use
+    a plain `urlpatterns` entry with the full path spelled out, following the same pattern as pretix's
+    own `returnurl`/`badges` plugins) and `apps.py`'s `PretixPluginMeta.settings_links` points the event
+    settings nav at it (`plugins:pretix_eupago:settings`).
+  - `pretix_eupago/templates/pretix_eupago/settings.html` extends
+    `pretixcontrol/event/settings_base.html`, the standard shell for this kind of page.
 - `pretix_eupago/views.py` — `EupagoWebhookView`, a CSRF-exempt Django view handling **both** euPago
   webhook formats:
   - v1.0: `GET` with query-string params (`identificador`, `mp`)
@@ -85,8 +105,18 @@ Templates must not hand-format `payment.amount` or echo amount fields returned b
 ### Sandbox vs. production
 
 `EupagoSettingsMixin._env()` picks between the `sandbox` and `production` entries in `MULTIBANCO_URL` /
-`MBWAY_URL` based on the per-event `sandbox` setting. There's no shared euPago API client — each
-provider makes its own `requests.post(...)` calls inline in `execute_payment`.
+`MBWAY_URL` based on the shared `event.settings.eupago_sandbox` value. There's no shared euPago API
+client — each provider makes its own `requests.post(...)` calls inline in `execute_payment`.
+
+### Shared vs. per-provider settings — which goes where
+
+When adding a new setting, decide: does every euPago payment method need this value, or just one? If
+shared (like the API key), add a form field to `EupagoSettingsForm` in `views.py` prefixed `eupago_`
+and read it in `EupagoSettingsMixin` via `self.event.settings.get(...)`. If provider-specific (like
+`multibanco_expiry_days`), add it to that provider's own `settings_form_fields` override and read it
+via `self.settings.get(...)` (the provider's `SettingsSandbox`) — don't put it in the mixin, since the
+mixin is shared code and its `settings_form_fields` (if it had one) would apply to every provider that
+uses it.
 
 ## Plugin registration mechanics (external vs. in-tree plugins)
 
@@ -105,8 +135,8 @@ constrains `apps.py` to remain a real submodule.
 ## Tests
 
 ```bash
-pip install -e ".[test]"   # pulls in real pretix core as a test dependency, not just this plugin
-pytest                     # runs the whole suite
+make install               # pip3 install -e ".[test]" — pulls in real pretix core, not just this plugin
+make test                  # pytest — runs the whole suite
 pytest tests/test_webhook.py::test_get_webhook_confirms_pending_payment -v   # single test
 ```
 
@@ -116,6 +146,13 @@ pytest tests/test_webhook.py::test_get_webhook_confirms_pending_payment -v   # s
   var is set, in which case real migrations run — that's inherited pretix CI behavior, not something
   this repo controls). `DJANGO_SETTINGS_MODULE` is pointed at it via `[tool.pytest.ini_options]` in
   `pyproject.toml`.
+- `pyproject.toml` also sets `pythonpath = ["."]` under `[tool.pytest.ini_options]`. This isn't optional
+  boilerplate: `pytest-django` imports `DJANGO_SETTINGS_MODULE` ("tests.settings") in a hook that runs
+  *before* pytest's normal conftest-driven `sys.path` setup. Running the bare `pytest` console script
+  (as CI does) — as opposed to `python -m pytest`, which adds the cwd to `sys.path` itself — doesn't put
+  the repo root on `sys.path` in time, so `tests.settings` fails to import. `pythonpath = ["."]` makes
+  pytest insert the rootdir regardless of invocation style. If CI ever fails with
+  `ImportError: No module named 'tests.settings'`, this is why.
 - Because the plugin is installed (even in `-e` editable mode) into the same environment pytest runs
   in, its `pretix.plugin` entry point is picked up automatically — no manual `INSTALLED_APPS` wiring
   needed in test settings.
@@ -129,6 +166,14 @@ pytest tests/test_webhook.py::test_get_webhook_confirms_pending_payment -v   # s
   default — set `request.session = {}` (or a dict with the expected keys) before calling into MB WAY's
   provider methods, since `EupagoMBWAY.execute_payment` falls back to reading
   `request.session["payment_eupago_mbway_phone"]` when `payment.info` has no phone.
+- `tests/test_settings.py` exercises the shared settings page (`EupagoSettings`) through the real
+  Control-panel URL with the Django test `client`, not just the form/view classes directly — including
+  a permission check. That means it needs a logged-in user with access to the event: create a `User`,
+  a `Team` with `all_event_permissions=True` limited to that event via `team.limit_events.add(event)`,
+  then `client.login(email=..., password=...)` (works because `pretix.testutils.settings` sets
+  `PRETIX_AUTH_BACKENDS = ['pretix.base.auth.NativeAuthBackend']`). Accessing an event settings page
+  without permission returns `404`, not `403` — matches pretix's own convention of not revealing that a
+  resource exists to users without access.
 
 ## Commands
 
@@ -142,8 +187,9 @@ python manage.py check     # validates the app loads and PretixPluginMeta is pic
 python manage.py runserver
 ```
 
-Then enable "euPago Payments" under an event's Settings → Plugins tab, and configure the Multibanco/MB
-WAY providers under Settings → Payment with a sandbox API key from euPago's Backoffice.
+Then enable "euPago Payments" under an event's Settings → Plugins tab, set the API key and sandbox
+toggle under Settings → Payment → euPago (the shared settings page), and enable/configure the
+Multibanco/MB WAY providers individually under Settings → Payment.
 
 Build distribution artifacts locally:
 

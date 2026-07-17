@@ -24,12 +24,21 @@ Development setup
 Configuration
 -------------
 
-Enable the plugin for an event, then go to the event's payment settings and configure the desired
-provider(s) (Multibanco and/or MB WAY):
+Enable the plugin for an event, then configure the shared euPago settings under
+**Settings → Payment → euPago**:
 
 * **API Key** — your euPago API key, found in Backoffice → Channels → Channel Listing.
 * **Sandbox / Test mode** — use the euPago sandbox environment for testing.
-* **Multibanco reference validity (days)** — how many days a generated Multibanco reference stays valid.
+
+Both are shared by every euPago payment method, so you only set them once. Then enable and configure
+each payment method you want individually under Settings → Payment:
+
+* **Multibanco** — has no method-specific settings besides the reference validity:
+
+  * **Multibanco reference validity (days)** — how many days a generated Multibanco reference stays
+    valid.
+
+* **MB WAY** — no method-specific settings.
 
 Finally, configure a single webhook URL in euPago's Backoffice (Channels → Channel Listing → "Receive
 notification for a URL"), for every channel you use::
