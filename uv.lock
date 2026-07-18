@@ -1808,6 +1808,7 @@ name = "pretix-eupago"
 version = "1.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "cryptography" },
     { name = "requests" },
 ]
 
@@ -1827,6 +1828,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography" },
     { name = "django-scopes", marker = "extra == 'test'" },
     { name = "pretix", marker = "extra == 'test'" },
     { name = "pytest", marker = "extra == 'test'" },

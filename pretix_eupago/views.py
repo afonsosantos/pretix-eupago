@@ -5,6 +5,8 @@ import hmac
 import json
 import logging
 
+from cryptography.hazmat.primitives import padding as sym_padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from django import forms
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.urls import reverse
@@ -14,7 +16,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_scopes import scopes_disabled
 from pretix.base.forms import SettingsForm
-from pretix.base.models import Event, OrderPayment
+from pretix.base.models import Event, Event_SettingsStore, OrderPayment
 from pretix.control.views.event import (
     EventSettingsFormView,
     EventSettingsViewMixin,
@@ -78,6 +80,10 @@ class EupagoWebhookView(View):
              in euPago's Backoffice. If the event has that secret configured
              (``eupago_webhook_secret``), the signature is verified before acting; a channel
              without a configured secret falls back to the weaker identifier cross-check only.
+             A channel with euPago's optional "encrypt" webhook setting enabled sends an
+             AES-256-CBC-encrypted body instead (``{"data": ..., ...}`` with no plaintext
+             ``transactions``); see ``_decrypt_payload`` for how that's handled on this
+             single, event-agnostic endpoint.
 
     See https://eupago.readme.io/reference/webhooks (v1.0) and
     https://eupago.readme.io/reference/realtime-webhooks-20 (v2.0).
@@ -125,6 +131,31 @@ class EupagoWebhookView(View):
             logger.warning("euPago webhook v2.0: invalid JSON body")
             return HttpResponseBadRequest("invalid JSON")
 
+        encrypted = "data" in data and "transactions" not in data
+        if encrypted:
+            # The channel has euPago's "encrypt" webhook option enabled: the whole body is
+            # AES-256-CBC ciphertext, keyed with the same per-channel secret used for
+            # X-Signature. We don't know which event this is for until we decrypt it, so
+            # try every event that has a webhook secret configured — a successful,
+            # correctly-padded decryption is itself strong proof the secret matches (PKCS7
+            # unpadding reliably fails for a wrong key), so no separate signature check is
+            # needed for this path.
+            iv = request.headers.get("X-Initialization-Vector", "")
+            plaintext = self._decrypt_payload(data.get("data", ""), iv)
+            if plaintext is None:
+                logger.warning(
+                    "euPago webhook v2.0: could not decrypt payload with any configured "
+                    "webhook secret"
+                )
+                return HttpResponse("OK", content_type="text/plain")
+            try:
+                data = json.loads(plaintext)
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(
+                    "euPago webhook v2.0: decrypted payload is not valid JSON"
+                )
+                return HttpResponse("OK", content_type="text/plain")
+
         transactions = data.get("transactions", {})
         status = transactions.get("status", "")
         identifier = transactions.get("identifier", "")
@@ -148,20 +179,24 @@ class EupagoWebhookView(View):
         if payment is None:
             return HttpResponse("OK", content_type="text/plain")
 
-        secret = payment.order.event.settings.get("eupago_webhook_secret", default="")
-        if secret:
-            signature = request.headers.get("X-Signature", "")
-            if not _verify_hmac(body, signature, secret):
-                logger.warning(
-                    "euPago webhook v2.0: invalid signature for payment %s", payment.pk
-                )
-                return HttpResponseBadRequest("invalid signature")
-        else:
-            logger.warning(
-                "euPago webhook v2.0: no webhook secret configured for event %s; "
-                "skipping signature verification (identifier cross-check only)",
-                payment.order.event.slug,
+        if not encrypted:
+            secret = payment.order.event.settings.get(
+                "eupago_webhook_secret", default=""
             )
+            if secret:
+                signature = request.headers.get("X-Signature", "")
+                if not _verify_hmac(body, signature, secret):
+                    logger.warning(
+                        "euPago webhook v2.0: invalid signature for payment %s",
+                        payment.pk,
+                    )
+                    return HttpResponseBadRequest("invalid signature")
+            else:
+                logger.warning(
+                    "euPago webhook v2.0: no webhook secret configured for event %s; "
+                    "skipping signature verification (identifier cross-check only)",
+                    payment.order.event.slug,
+                )
 
         if status == "Paid":
             self._confirm_payment(payment)
@@ -169,6 +204,32 @@ class EupagoWebhookView(View):
             self._refund_payment(payment)
 
         return HttpResponse("OK", content_type="text/plain")
+
+    def _decrypt_payload(self, ciphertext_b64: str, iv_b64: str):
+        """
+        Try to AES-256-CBC-decrypt an encrypted webhook body against every event's
+        configured ``eupago_webhook_secret``, returning the first successful plaintext (or
+        ``None`` if none match). See https://eupago.readme.io/reference/realtime-webhooks-20.
+        """
+        if not ciphertext_b64 or not iv_b64:
+            return None
+        try:
+            ciphertext = base64.b64decode(ciphertext_b64)
+            iv = base64.b64decode(iv_b64)
+        except (binascii.Error, ValueError):
+            return None
+
+        secrets = (
+            Event_SettingsStore.objects.filter(key="eupago_webhook_secret")
+            .exclude(value="")
+            .values_list("value", flat=True)
+            .distinct()
+        )
+        for secret in secrets:
+            plaintext = _aes_cbc_decrypt(ciphertext, iv, secret.encode())
+            if plaintext is not None:
+                return plaintext
+        return None
 
     def _lookup_payment(self, identifier: str):
         """
@@ -281,3 +342,17 @@ def _verify_hmac(body: bytes, signature: str, secret: str) -> bool:
     except (binascii.Error, ValueError):
         return False
     return hmac.compare_digest(expected, received)
+
+
+def _aes_cbc_decrypt(ciphertext: bytes, iv: bytes, key: bytes):
+    """
+    Decrypt an euPago webhook v2.0 encrypted payload (AES-256-CBC, PKCS7-padded). Returns
+    ``None`` on any error — including a wrong key, which reliably fails PKCS7 unpadding.
+    """
+    try:
+        decryptor = Cipher(algorithms.AES(key), modes.CBC(iv)).decryptor()
+        padded = decryptor.update(ciphertext) + decryptor.finalize()
+        unpadder = sym_padding.PKCS7(algorithms.AES.block_size).unpadder()
+        return unpadder.update(padded) + unpadder.finalize()
+    except (ValueError, TypeError):
+        return None

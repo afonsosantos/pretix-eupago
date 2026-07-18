@@ -95,6 +95,17 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     confirmed and has no refund recorded yet. euPago's payload carries no per-refund id/amount, so this
     always treats it as a full refund and is a no-op if a refund already exists (webhook retries, or a
     second notification, don't double-refund).
+  - **v2.0 encrypted mode**: euPago's Backoffice has an optional per-channel "encrypt" toggle for
+    webhooks; when enabled, the POST body is `{"data": "<base64 AES-256-CBC ciphertext>", ...}` (no
+    plaintext `transactions`) with the IV in an `X-Initialization-Vector` header, keyed with the same
+    per-channel secret as `X-Signature`. `post()` detects this (`"data" in data and "transactions" not
+    in data`) and calls `_decrypt_payload()`, which — since this is one global endpoint shared by every
+    event and there's no way to know which event a request belongs to before decrypting it — tries every
+    event's configured `eupago_webhook_secret` in turn via `_aes_cbc_decrypt()` until one produces
+    correctly-PKCS7-padded plaintext. A successful decrypt is itself strong proof of authenticity (wrong
+    keys reliably fail PKCS7 unpadding), so the normal `X-Signature` check is skipped for this path. This
+    requires the `cryptography` package, declared as a direct dependency (not just relied on transitively
+    via pretix) since the plugin imports it directly.
   - The whole view is decorated with `@method_decorator(scopes_disabled(), name="dispatch")`
     (`django_scopes`). This is required, not optional: `/eupago/webhook/` is a global URL with no
     `organizer`/`event` in its path, so pretix's usual scope-activation (which scopes queries by the

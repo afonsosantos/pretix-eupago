@@ -84,7 +84,8 @@ notification for a URL"), for every channel you use::
 
 This URL is global (not event-scoped) and handles both euPago webhook formats (v1.0 GET and v2.0 POST).
 v1.0 notifications are verified against your configured API key; v2.0 notifications are verified against
-your configured webhook signature secret, if set.
+your configured webhook signature secret, if set. The optional "encrypt" webhook setting in Backoffice
+is also supported (the payload is decrypted using that same secret).
 
 License
 -------

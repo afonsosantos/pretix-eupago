@@ -2,8 +2,11 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 
 import pytest
+from cryptography.hazmat.primitives import padding as sym_padding
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from django_scopes import scopes_disabled
 from pretix.base.models import OrderPayment
 
@@ -12,6 +15,7 @@ from .conftest import make_payment
 WEBHOOK_URL = "/eupago/webhook/"
 API_KEY = "test-api-key"
 WEBHOOK_SECRET = "test-webhook-secret"
+ENCRYPTION_SECRET = "a" * 32  # AES-256 needs a 32-byte key
 
 
 def make_confirmable_payment(order, provider, **kwargs):
@@ -29,6 +33,16 @@ def sign(body: bytes, secret: str = WEBHOOK_SECRET) -> str:
     return base64.b64encode(
         hmac.new(secret.encode(), body, hashlib.sha256).digest()
     ).decode()
+
+
+def encrypt(plaintext: bytes, secret: str = ENCRYPTION_SECRET) -> tuple[str, str]:
+    """Mirror euPago's webhook v2.0 "encrypt=true" mode: AES-256-CBC, PKCS7-padded."""
+    iv = os.urandom(16)
+    padder = sym_padding.PKCS7(algorithms.AES.block_size).padder()
+    padded = padder.update(plaintext) + padder.finalize()
+    encryptor = Cipher(algorithms.AES(secret.encode()), modes.CBC(iv)).encryptor()
+    ciphertext = encryptor.update(padded) + encryptor.finalize()
+    return base64.b64encode(ciphertext).decode(), base64.b64encode(iv).decode()
 
 
 @pytest.fixture(autouse=True)
@@ -280,6 +294,62 @@ def test_post_webhook_valid_signature_confirms_payment(client, order, event):
     with scopes_disabled():
         payment.refresh_from_db()
     assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
+def test_post_webhook_encrypted_payload_confirms_payment(client, order, event):
+    with scopes_disabled():
+        event.settings.set("eupago_webhook_secret", ENCRYPTION_SECRET)
+    payment = make_confirmable_payment(order, "eupago_mbway")
+    plaintext = json.dumps(
+        {
+            "transactions": {
+                "status": "Paid",
+                "identifier": f"{order.code}-{payment.pk}",
+            }
+        }
+    ).encode()
+    ciphertext_b64, iv_b64 = encrypt(plaintext)
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps({"data": ciphertext_b64}),
+        content_type="application/json",
+        HTTP_X_INITIALIZATION_VECTOR=iv_b64,
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
+def test_post_webhook_encrypted_payload_wrong_secret_is_ignored(client, order, event):
+    with scopes_disabled():
+        event.settings.set("eupago_webhook_secret", ENCRYPTION_SECRET)
+    payment = make_confirmable_payment(order, "eupago_mbway")
+    plaintext = json.dumps(
+        {
+            "transactions": {
+                "status": "Paid",
+                "identifier": f"{order.code}-{payment.pk}",
+            }
+        }
+    ).encode()
+    ciphertext_b64, iv_b64 = encrypt(plaintext, secret="x" * 32)
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps({"data": ciphertext_b64}),
+        content_type="application/json",
+        HTTP_X_INITIALIZATION_VECTOR=iv_b64,
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CREATED
 
 
 @pytest.mark.django_db
