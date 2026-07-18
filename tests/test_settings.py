@@ -27,6 +27,7 @@ def test_get_settings_page(logged_in_client, event):
     )
     assert response.status_code == 200
     assert b"API Key" in response.content
+    assert b"Webhook signature secret" in response.content
 
 
 @pytest.mark.django_db
@@ -48,6 +49,22 @@ def test_post_settings_page_saves_and_is_shared_by_both_providers(
     assert mbway._api_key == "posted-api-key"
     assert multibanco._is_sandbox is True
     assert mbway._is_sandbox is True
+
+
+@pytest.mark.django_db
+def test_post_settings_page_saves_webhook_secret(logged_in_client, event):
+    response = logged_in_client.post(
+        SETTINGS_URL.format(event.organizer.slug, event.slug),
+        data={
+            "eupago_api_key": "posted-api-key",
+            "eupago_webhook_secret": "posted-webhook-secret",
+        },
+    )
+    assert response.status_code == 302
+
+    with scopes_disabled():
+        event.settings.flush()
+        assert event.settings.get("eupago_webhook_secret") == "posted-webhook-secret"
 
 
 @pytest.mark.django_db

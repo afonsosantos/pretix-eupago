@@ -41,8 +41,9 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   - Both providers implement `payment_pending_render` / `payment_control_render` (per-provider
     templates), `api_payment_details`, `matching_id`, and `shred_payment_info` (MB WAY redacts the
     phone number; Multibanco has nothing to shred).
-  - Neither provider implements `execute_refund` — refunds are not currently supported and must be
-    handled manually/out-of-band.
+  - Neither provider implements `execute_refund` — refunds can't be *initiated* from pretix and must be
+    handled manually/out-of-band in euPago's Backoffice. Refunds triggered that way *are* reflected back
+    into pretix, though: see `EupagoWebhookView._refund_payment` below.
 - `EupagoSettingsMixin` (top of `payment.py`) holds only what's genuinely shared: `_api_key`,
   `_is_sandbox`, `_env()`, `test_mode_message`, and `settings_content_render` (a link back to the
   shared settings page, shown on each provider's own settings screen so admins don't go looking for a
@@ -50,8 +51,9 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   below for why the API key/sandbox fields live elsewhere.
 - `pretix_eupago/views.py` also defines `EupagoSettingsForm` (a `pretix.base.forms.SettingsForm`) and
   `EupagoSettings` (`EventSettingsViewMixin` + `EventSettingsFormView`) — a single Control-panel page,
-  shared across both payment methods, holding `eupago_api_key` and `eupago_sandbox`. These are read
-  directly off `event.settings` (not a provider's `SettingsSandbox`) by `EupagoSettingsMixin`, since
+  shared across both payment methods, holding `eupago_api_key`, `eupago_sandbox`, and
+  `eupago_webhook_secret` (optional; see webhook section below). These are read directly off
+  `event.settings` (not a provider's `SettingsSandbox`) by `EupagoSettingsMixin`, since
   `SettingsSandbox` always prefixes keys per-provider (`payment_<identifier>_...`) and there is no
   built-in way to share one field across providers other than storing it unprefixed on `event.settings`
   and having each provider read it directly. `permission = "event.settings.payment:write"`.
@@ -63,21 +65,42 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   - `pretix_eupago/templates/pretix_eupago/settings.html` extends
     `pretixcontrol/event/settings_base.html`, the standard shell for this kind of page.
 - `pretix_eupago/views.py` — `EupagoWebhookView`, a CSRF-exempt Django view handling **both** euPago
-  webhook formats:
-  - v1.0: `GET` with query-string params (`identificador`, `mp`)
-  - v2.0: `POST` with a JSON body (`transactions.status/identifier/method`)
-  Both paths funnel into `_confirm_payment(identifier)`, which parses the identifier as
-  `"{order.code}-{payment.pk}"` (via `rsplit("-", 1)`), looks up the `OrderPayment`, cross-checks the
-  identifier stored in `payment.info_data` (spoofing guard), skips payments already in a terminal
-  state, and calls `payment.confirm()`.
-  - Note: `_verify_hmac` (HMAC-SHA256 signature check for webhook v2.0) is defined at module level but
-    is **not currently called** anywhere in `post()` — signature verification is not enforced yet.
+  webhook formats (see https://eupago.readme.io/reference/webhooks and
+  https://eupago.readme.io/reference/realtime-webhooks-20):
+  - v1.0: `GET` with query-string params (`identificador`, `mp`, `chave_api`, ...). Only sent for paid
+    references — euPago does not send v1.0 notifications for expired/canceled/refunded ones.
+  - v2.0: `POST` with a JSON body (`transactions.status/identifier/method`), statuses `Paid`, `Refund`,
+    `Error`, `Cancel`, `Expired`.
+  Both paths funnel through `_lookup_payment(identifier)`, which parses the identifier as
+  `"{order.code}-{payment.pk}"` (via `rsplit("-", 1)`), looks up the `OrderPayment`, and cross-checks the
+  identifier stored in `payment.info_data`. That cross-check alone is **not** sufficient authentication —
+  a payment's own customer already knows their own order code and payment pk, so they could replay it
+  against the global endpoint to self-confirm an unpaid order. Each webhook format therefore adds a
+  further, source-specific check before acting on the result:
+  - **v1.0 (`get`)**: euPago includes `chave_api`, the API key used to create the reference, in every
+    v1.0 notification. That key is a secret only the event admin and euPago know (customers never see
+    it), so `get()` requires it to `hmac.compare_digest`-match the event's configured `eupago_api_key`
+    before calling `_confirm_payment`. This check is mandatory — there's no opt-out, since `chave_api` is
+    always present in genuine v1.0 traffic.
+  - **v2.0 (`post`)**: euPago signs the raw POST body with HMAC-SHA256 in an `X-Signature` header
+    (base64-encoded digest), keyed with a secret generated per-channel in Backoffice. If the event has
+    that secret configured (`eupago_webhook_secret`, optional), `post()` verifies the signature via
+    `_verify_hmac()` before acting and rejects on mismatch. If the secret is *not* configured (e.g. an
+    upgrade from before this existed), it logs a warning and falls back to the identifier cross-check
+    only — kept as a fallback rather than a hard requirement so existing installs don't lose webhook
+    confirmation entirely until an admin sets the secret.
+  - `post()` also handles `status in ("Refund", "Refunded")` via `_refund_payment`, which calls
+    `payment.create_external_refund()` (pretix core's designated API for refunds triggered by an
+    external source — the same one the in-tree `stripe` plugin uses) when the payment is currently
+    confirmed and has no refund recorded yet. euPago's payload carries no per-refund id/amount, so this
+    always treats it as a full refund and is a no-op if a refund already exists (webhook retries, or a
+    second notification, don't double-refund).
   - The whole view is decorated with `@method_decorator(scopes_disabled(), name="dispatch")`
     (`django_scopes`). This is required, not optional: `/eupago/webhook/` is a global URL with no
     `organizer`/`event` in its path, so pretix's usual scope-activation (which scopes queries by the
     matched URL kwargs) never runs for this view. Without `scopes_disabled()`, any `OrderPayment`
     query raises `django_scopes.exceptions.ScopeError`, which the broad `except Exception` in
-    `_confirm_payment` silently swallows — the webhook returns `200 OK` but never actually confirms
+    `_lookup_payment` silently swallows — the webhook returns `200 OK` but never actually confirms
     the payment. Sibling in-tree plugins with global webhook endpoints (`stripe`, `paypal2`) use the
     same guard for the same reason.
 - `pretix_eupago/urls.py` — registers a **global** (non-event-scoped) URL, `/eupago/webhook/`, for the
