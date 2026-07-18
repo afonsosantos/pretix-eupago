@@ -9,7 +9,6 @@ from django.http import HttpRequest
 from django.template.loader import get_template
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
-
 from pretix.base.models import OrderPayment
 from pretix.base.payment import BasePaymentProvider, PaymentException
 
@@ -49,17 +48,20 @@ class EupagoSettingsMixin:
     @property
     def test_mode_message(self):
         if self._is_sandbox:
-            return _("euPago sandbox mode is active. No real payments will be processed.")
+            return _(
+                "euPago sandbox mode is active. No real payments will be processed."
+            )
         return None
 
     def settings_content_render(self, request) -> str:
-        url = reverse("plugins:pretix_eupago:settings", kwargs={
-            "organizer": self.event.organizer.slug,
-            "event": self.event.slug,
-        })
-        return (
-            "<p>{} <a href=\"{}\">{}</a></p>"
-        ).format(
+        url = reverse(
+            "plugins:pretix_eupago:settings",
+            kwargs={
+                "organizer": self.event.organizer.slug,
+                "event": self.event.slug,
+            },
+        )
+        return ('<p>{} <a href="{}">{}</a></p>').format(
             _("The API key and sandbox mode are configured on the"),
             url,
             _("general euPago settings page"),
@@ -83,12 +85,16 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
                         max_value=365,
                         initial=MULTIBANCO_EXPIRY_DAYS,
                         required=False,
-                        help_text=_("How many days the Multibanco reference remains valid."),
+                        help_text=_(
+                            "How many days the Multibanco reference remains valid."
+                        ),
                     ),
                 ),
             ]
         )
-        return OrderedDict(list(super().settings_form_fields.items()) + list(fields.items()))
+        return OrderedDict(
+            list(super().settings_form_fields.items()) + list(fields.items())
+        )
 
     # No checkout form fields needed — Multibanco references are generated server-side.
     @property
@@ -103,7 +109,9 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
         return template.render({"request": request})
 
     def execute_payment(self, request: HttpRequest, payment: OrderPayment):
-        expiry_days = self.settings.get("multibanco_expiry_days", as_type=int, default=MULTIBANCO_EXPIRY_DAYS)
+        expiry_days = self.settings.get(
+            "multibanco_expiry_days", as_type=int, default=MULTIBANCO_EXPIRY_DAYS
+        )
         expiry = (date.today() + timedelta(days=expiry_days)).strftime("%Y-%m-%d")
         identifier = f"{payment.order.code}-{payment.pk}"
 
@@ -137,7 +145,9 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
                 data,
             )
             raise PaymentException(
-                _("The payment provider returned an error. Please try a different payment method.")
+                _(
+                    "The payment provider returned an error. Please try a different payment method."
+                )
             )
 
         payment.info = json.dumps(
@@ -208,9 +218,7 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
         )
 
     def payment_is_valid_session(self, request):
-        return bool(
-            request.session.get("payment_%s_phone" % self.identifier)
-        )
+        return bool(request.session.get("payment_%s_phone" % self.identifier))
 
     def checkout_confirm_render(self, request) -> str:
         template = get_template("pretix_eupago/checkout_mbway.html")
@@ -244,7 +252,7 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
         phone = phone.strip().replace(" ", "")
         for prefix in ("+351", "351"):
             if phone.startswith(prefix):
-                phone = phone[len(prefix):]
+                phone = phone[len(prefix) :]
                 break
         phone = "351#" + phone
 

@@ -2,7 +2,6 @@ import json
 
 import pytest
 from django_scopes import scopes_disabled
-
 from pretix.base.models import OrderPayment
 
 from .conftest import make_payment
@@ -25,7 +24,9 @@ def make_confirmable_payment(order, provider, **kwargs):
 def test_get_webhook_confirms_pending_payment(client, order):
     payment = make_confirmable_payment(order, "eupago_multibanco")
 
-    response = client.get(WEBHOOK_URL, {"identificador": f"{order.code}-{payment.pk}", "mp": "PC:PT"})
+    response = client.get(
+        WEBHOOK_URL, {"identificador": f"{order.code}-{payment.pk}", "mp": "PC:PT"}
+    )
 
     assert response.status_code == 200
     with scopes_disabled():
@@ -70,7 +71,12 @@ def test_post_webhook_non_paid_status_does_not_confirm(client, order):
     response = client.post(
         WEBHOOK_URL,
         data=json.dumps(
-            {"transactions": {"status": "Pending", "identifier": f"{order.code}-{payment.pk}"}}
+            {
+                "transactions": {
+                    "status": "Pending",
+                    "identifier": f"{order.code}-{payment.pk}",
+                }
+            }
         ),
         content_type="application/json",
     )
@@ -83,7 +89,9 @@ def test_post_webhook_non_paid_status_does_not_confirm(client, order):
 
 @pytest.mark.django_db
 def test_post_webhook_invalid_json_is_bad_request(client):
-    response = client.post(WEBHOOK_URL, data="not json", content_type="application/json")
+    response = client.post(
+        WEBHOOK_URL, data="not json", content_type="application/json"
+    )
     assert response.status_code == 400
 
 
@@ -120,7 +128,9 @@ def test_webhook_unknown_payment_does_not_error(client):
 
 @pytest.mark.django_db
 def test_webhook_malformed_identifier_does_not_error(client):
-    response = client.get(WEBHOOK_URL, {"identificador": "not-a-valid-identifier-format-!!"})
+    response = client.get(
+        WEBHOOK_URL, {"identificador": "not-a-valid-identifier-format-!!"}
+    )
     assert response.status_code == 200
 
 

@@ -1,10 +1,18 @@
-.PHONY: install test bump-version
+.PHONY: install test lint format bump-version
 
 install:
-	pip3 install -e ".[test]"
+	uv sync --extra test
 
 test:
-	pytest
+	uv run pytest
+
+lint:
+	uv run ruff check .
+	uv run ruff format --check .
+
+format:
+	uv run ruff check --fix .
+	uv run ruff format .
 
 bump-version:
 	@version="$(filter-out $@,$(MAKECMDGOALS))"; \

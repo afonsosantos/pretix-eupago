@@ -4,8 +4,8 @@ from datetime import date, timedelta
 import pytest
 import responses
 from django.test import RequestFactory
-
 from pretix.base.payment import PaymentException
+
 from pretix_eupago.payment import MULTIBANCO_URL, EupagoMultibanco
 
 from .conftest import make_payment
@@ -25,7 +25,12 @@ def test_execute_payment_success(provider, order):
     responses.add(
         responses.POST,
         MULTIBANCO_URL["sandbox"],
-        json={"estado": 0, "referencia": "123456789", "entidade": "12345", "valor": "23.00"},
+        json={
+            "estado": 0,
+            "referencia": "123456789",
+            "entidade": "12345",
+            "valor": "23.00",
+        },
         status=200,
     )
 
@@ -46,7 +51,12 @@ def test_execute_payment_uses_configured_expiry(provider, order):
     responses.add(
         responses.POST,
         MULTIBANCO_URL["sandbox"],
-        json={"estado": 0, "referencia": "123456789", "entidade": "12345", "valor": "23.00"},
+        json={
+            "estado": 0,
+            "referencia": "123456789",
+            "entidade": "12345",
+            "valor": "23.00",
+        },
         status=200,
     )
 
@@ -91,7 +101,9 @@ def test_matching_id_and_api_payment_details(provider, order):
     payment = make_payment(
         order,
         provider.identifier,
-        info=json.dumps({"referencia": "123456789", "entidade": "12345", "expiry": "2026-01-01"}),
+        info=json.dumps(
+            {"referencia": "123456789", "entidade": "12345", "expiry": "2026-01-01"}
+        ),
     )
 
     assert provider.matching_id(payment) == "123456789"
@@ -105,7 +117,9 @@ def test_matching_id_and_api_payment_details(provider, order):
 @pytest.mark.django_db
 def test_shred_payment_info_is_noop(provider, order):
     payment = make_payment(
-        order, provider.identifier, info=json.dumps({"referencia": "123456789", "entidade": "12345"})
+        order,
+        provider.identifier,
+        info=json.dumps({"referencia": "123456789", "entidade": "12345"}),
     )
 
     provider.shred_payment_info(payment)

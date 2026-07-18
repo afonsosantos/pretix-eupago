@@ -1,7 +1,7 @@
 import pytest
 from django_scopes import scopes_disabled
-
 from pretix.base.models import Team, User
+
 from pretix_eupago.payment import EupagoMBWAY, EupagoMultibanco
 
 SETTINGS_URL = "/control/event/{}/{}/eupago/settings"
@@ -11,7 +11,9 @@ SETTINGS_URL = "/control/event/{}/{}/eupago/settings"
 def logged_in_client(client, event):
     with scopes_disabled():
         user = User.objects.create_user("dummy@example.org", "dummy")
-        team = Team.objects.create(organizer=event.organizer, all_event_permissions=True)
+        team = Team.objects.create(
+            organizer=event.organizer, all_event_permissions=True
+        )
         team.members.add(user)
         team.limit_events.add(event)
     client.login(email="dummy@example.org", password="dummy")
@@ -20,13 +22,17 @@ def logged_in_client(client, event):
 
 @pytest.mark.django_db
 def test_get_settings_page(logged_in_client, event):
-    response = logged_in_client.get(SETTINGS_URL.format(event.organizer.slug, event.slug))
+    response = logged_in_client.get(
+        SETTINGS_URL.format(event.organizer.slug, event.slug)
+    )
     assert response.status_code == 200
     assert b"API Key" in response.content
 
 
 @pytest.mark.django_db
-def test_post_settings_page_saves_and_is_shared_by_both_providers(logged_in_client, event):
+def test_post_settings_page_saves_and_is_shared_by_both_providers(
+    logged_in_client, event
+):
     response = logged_in_client.post(
         SETTINGS_URL.format(event.organizer.slug, event.slug),
         data={"eupago_api_key": "posted-api-key", "eupago_sandbox": "on"},

@@ -11,11 +11,11 @@ from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_scopes import scopes_disabled
-
 from pretix.base.forms import SettingsForm
 from pretix.base.models import Event, OrderPayment
 from pretix.control.views.event import (
-    EventSettingsFormView, EventSettingsViewMixin,
+    EventSettingsFormView,
+    EventSettingsViewMixin,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 class EupagoSettingsForm(SettingsForm):
     eupago_api_key = forms.CharField(
         label=_("API Key"),
-        help_text=_("Your euPago API key, found in Backoffice → Channels → Channel Listing."),
+        help_text=_(
+            "Your euPago API key, found in Backoffice → Channels → Channel Listing."
+        ),
     )
     eupago_sandbox = forms.BooleanField(
         label=_("Sandbox / Test mode"),
@@ -40,10 +42,13 @@ class EupagoSettings(EventSettingsViewMixin, EventSettingsFormView):
     permission = "event.settings.payment:write"
 
     def get_success_url(self) -> str:
-        return reverse("plugins:pretix_eupago:settings", kwargs={
-            "organizer": self.request.event.organizer.slug,
-            "event": self.request.event.slug,
-        })
+        return reverse(
+            "plugins:pretix_eupago:settings",
+            kwargs={
+                "organizer": self.request.event.organizer.slug,
+                "event": self.request.event.slug,
+            },
+        )
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -112,17 +117,23 @@ class EupagoWebhookView(View):
             # rsplit to handle order codes that might contain hyphens
             parts = identifier.rsplit("-", 1)
             if len(parts) != 2:
-                logger.warning("euPago webhook: unexpected identifier format: %s", identifier)
+                logger.warning(
+                    "euPago webhook: unexpected identifier format: %s", identifier
+                )
                 return
 
             payment_pk = int(parts[1])
             payment = OrderPayment.objects.select_related("order").get(pk=payment_pk)
 
         except (ValueError, OrderPayment.DoesNotExist):
-            logger.warning("euPago webhook: payment not found for identifier=%s", identifier)
+            logger.warning(
+                "euPago webhook: payment not found for identifier=%s", identifier
+            )
             return
         except Exception:
-            logger.exception("euPago webhook: error looking up identifier=%s", identifier)
+            logger.exception(
+                "euPago webhook: error looking up identifier=%s", identifier
+            )
             return
 
         # Guard against identifier spoofing: verify stored identifier matches
@@ -150,7 +161,11 @@ class EupagoWebhookView(View):
 
         try:
             payment.confirm()
-            logger.info("euPago webhook: confirmed payment %s for order %s", payment_pk, payment.order.code)
+            logger.info(
+                "euPago webhook: confirmed payment %s for order %s",
+                payment_pk,
+                payment.order.code,
+            )
         except Exception:
             logger.exception("euPago webhook: error confirming payment %s", payment_pk)
 

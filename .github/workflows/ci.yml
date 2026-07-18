@@ -7,13 +7,26 @@ on:
     types: [published]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Run ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.x"
 
@@ -21,30 +34,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y gettext
 
       - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[test]"
+        run: uv sync --extra test
 
       - name: Run tests
-        run: pytest
+        run: uv run pytest
 
   build:
     name: Build distribution
-    needs: test
+    needs: [lint, test]
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.x"
 
-      - name: Install build
-        run: python -m pip install --upgrade build
-
       - name: Build sdist and wheel
-        run: python -m build
+        run: uv build
 
       - uses: actions/upload-artifact@v4
         with:

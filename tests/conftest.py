@@ -4,7 +4,6 @@ from decimal import Decimal
 import pytest
 from django.utils.timezone import now
 from django_scopes import scopes_disabled
-
 from pretix.base.models import Event, Order, OrderPayment, Organizer
 
 
@@ -42,7 +41,9 @@ def order(event):
         )
 
 
-def make_payment(order, provider, amount=None, info="{}", state=OrderPayment.PAYMENT_STATE_CREATED):
+def make_payment(
+    order, provider, amount=None, info="{}", state=OrderPayment.PAYMENT_STATE_CREATED
+):
     with scopes_disabled():
         return order.payments.create(
             amount=amount if amount is not None else order.total,

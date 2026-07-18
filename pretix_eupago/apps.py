@@ -1,5 +1,4 @@
 from django.utils.translation import gettext_lazy as _
-
 from pretix.base.plugins import PluginConfig
 
 from . import __version__

@@ -135,10 +135,17 @@ constrains `apps.py` to remain a real submodule.
 ## Tests
 
 ```bash
-make install               # pip3 install -e ".[test]" — pulls in real pretix core, not just this plugin
-make test                  # pytest — runs the whole suite
-pytest tests/test_webhook.py::test_get_webhook_confirms_pending_payment -v   # single test
+make install               # uv sync --extra test — pulls in real pretix core, not just this plugin
+make test                  # uv run pytest — runs the whole suite
+uv run pytest tests/test_webhook.py::test_get_webhook_confirms_pending_payment -v   # single test
+make lint                  # uv run ruff check . && uv run ruff format --check .
+make format                # uv run ruff check --fix . && uv run ruff format .
 ```
+
+Dependency and environment management uses [uv](https://docs.astral.sh/uv/); `uv.lock` is the
+committed lockfile. `ruff` (lint + format) is declared under `[dependency-groups].dev` in
+`pyproject.toml`, not `test`, since it's a contributor tool rather than something the test suite
+imports.
 
 - `tests/settings.py` is just `from pretix.testutils.settings import *` — that module (shipped inside
   the `pretix` package itself) builds a full, working Django settings module on top of `pretix.settings`
@@ -194,22 +201,22 @@ Multibanco/MB WAY providers individually under Settings → Payment.
 Build distribution artifacts locally:
 
 ```bash
-python -m pip install build twine
-python -m build                # produces dist/*.tar.gz and dist/*.whl
-python -m twine check dist/*
+uv build                       # produces dist/*.tar.gz and dist/*.whl
+uvx twine check dist/*
 ```
 
 ## CI / Publishing
 
-`.github/workflows/ci.yml` has three jobs:
+`.github/workflows/ci.yml` has four jobs, all using `astral-sh/setup-uv`:
 
-- `test` — runs on every push to `main` and on every GitHub Release: installs `.[test]` and runs
-  `pytest`.
+- `lint` / `test` — run on every push to `main` and on every GitHub Release. `lint` runs
+  `ruff check` and `ruff format --check`; `test` runs `uv sync --extra test` then `uv run pytest`.
 - `build` / `publish` — only run for the `release` event (`if: github.event_name == 'release'`), and
-  `needs:` the previous job, so a release only reaches PyPI if the test suite passes. Publishing uses
-  PyPI **trusted publishing** (OIDC) — no API token is stored as a repo secret. The `publish` job's
-  `environment: pypi` must match the environment name registered as the trusted publisher on PyPI's
-  project settings (https://pypi.org/manage/account/publishing/).
+  `needs: [lint, test]`, so a release only reaches PyPI if both lint and the test suite pass.
+  `build` runs `uv build`. Publishing uses PyPI **trusted publishing** (OIDC) — no API token is
+  stored as a repo secret. The `publish` job's `environment: pypi` must match the environment name
+  registered as the trusted publisher on PyPI's project settings
+  (https://pypi.org/manage/account/publishing/).
 
 Bump the version in both `pyproject.toml` and `pretix_eupago/__init__.py` before cutting a release —
 they are not currently kept in sync automatically.
