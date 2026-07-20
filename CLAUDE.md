@@ -16,7 +16,7 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   fails fast with a clear error if `pretix` itself isn't importable (guards against `pip install`
   being run outside a pretix environment).
 - `pretix_eupago/apps.py` — `PluginApp` (subclasses `pretix.base.plugins.PluginConfig`, not plain
-  Django `AppConfig`) declares the `PretixPluginMeta` (name, category `PAYMENT`, `experimental = True`,
+  Django `AppConfig`) declares the `PretixPluginMeta` (name, category `PAYMENT`, `experimental = False`,
   `compatibility = "pretix>=4.0.0"`) and hooks up `signals.py` in `ready()`.
   - **This file must stay a real submodule** (`pretix_eupago/apps.py`), not be inlined into
     `__init__.py`. pretix's plugin loader (`pretix/settings.py`) reads only the *module* portion of the
@@ -245,8 +245,10 @@ uvx twine check dist/*
 
 `.github/workflows/ci.yml` has four jobs, all using `astral-sh/setup-uv`:
 
-- `lint` / `test` — run on every push to `main` and on every GitHub Release. `lint` runs
-  `ruff check` and `ruff format --check`; `test` runs `uv sync --extra test` then `uv run pytest`.
+- `lint` / `test` — run on every push to `main`, every pull request, and every GitHub Release. `lint`
+  runs `ruff check` and `ruff format --check`; `test` runs `uv sync --extra test` then `uv run pytest`,
+  matrixed across Python 3.11–3.14 (matching `requires-python` and the Python version classifiers in
+  `pyproject.toml`).
 - `build` / `publish` — only run for the `release` event (`if: github.event_name == 'release'`), and
   `needs: [lint, test]`, so a release only reaches PyPI if both lint and the test suite pass.
   `build` runs `uv build`. Publishing uses PyPI **trusted publishing** (OIDC) — no API token is

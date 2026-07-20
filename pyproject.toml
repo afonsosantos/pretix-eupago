@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pretix-eupago"
-version = "1.0.2"
+version = "1.1.0"
 description = "Accept Multibanco and MB WAY payments via euPago in pretix"
 readme = "README.rst"
 requires-python = ">=3.11"
@@ -13,17 +13,21 @@ authors = [
     { name = "Afonso Santos" },
 ]
 dependencies = [
-    "requests",
-    "cryptography",
+    "requests>=2.31",
+    "cryptography>=42",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: Apache Software License",
     "Operating System :: OS Independent",
     "Framework :: Django",
     "Framework :: Django :: 5.2",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
 ]
 
 [project.optional-dependencies]
@@ -37,6 +41,7 @@ test = [
 
 [project.urls]
 Homepage = "https://github.com/afonsosantos/pretix-eupago"
+Issues = "https://github.com/afonsosantos/pretix-eupago/issues"
 
 [project.entry-points."pretix.plugin"]
 pretix_eupago = "pretix_eupago:PluginApp"

@@ -14,7 +14,7 @@ class PluginApp(PluginConfig):
         author = "Afonso Santos"
         description = _("Accept Multibanco and MB WAY payments via euPago")
         visible = True
-        experimental = True
+        experimental = False
         version = __version__
         category = "PAYMENT"
         compatibility = "pretix>=4.0.0"
