@@ -82,8 +82,10 @@ class EupagoWebhookView(View):
              without a configured secret falls back to the weaker identifier cross-check only.
              A channel with euPago's optional "encrypt" webhook setting enabled sends an
              AES-256-CBC-encrypted body instead (``{"data": ..., ...}`` with no plaintext
-             ``transactions``); see ``_decrypt_payload`` for how that's handled on this
-             single, event-agnostic endpoint.
+             ``transaction``); see ``_decrypt_payload`` for how that's handled on this
+             single, event-agnostic endpoint. Note euPago's own docs call this field
+             "transactions" (plural), but the real payload key is singular
+             ``"transaction"``.
 
     See https://eupago.readme.io/reference/webhooks (v1.0) and
     https://eupago.readme.io/reference/realtime-webhooks-20 (v2.0).
@@ -131,7 +133,7 @@ class EupagoWebhookView(View):
             logger.warning("euPago webhook v2.0: invalid JSON body")
             return HttpResponseBadRequest("invalid JSON")
 
-        encrypted = "data" in data and "transactions" not in data
+        encrypted = "data" in data and "transaction" not in data
         if encrypted:
             # The channel has euPago's "encrypt" webhook option enabled: the whole body is
             # AES-256-CBC ciphertext, keyed with the same per-channel secret used for
@@ -156,10 +158,10 @@ class EupagoWebhookView(View):
                 )
                 return HttpResponse("OK", content_type="text/plain")
 
-        transactions = data.get("transactions", {})
-        status = transactions.get("status", "")
-        identifier = transactions.get("identifier", "")
-        method = transactions.get("method", "")
+        transaction = data.get("transaction", {})
+        status = transaction.get("status", "")
+        identifier = transaction.get("identifier", "")
+        method = transaction.get("method", "")
 
         logger.info(
             "euPago webhook v2.0: method=%s status=%s identifier=%s",

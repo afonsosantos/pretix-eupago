@@ -114,7 +114,7 @@ def test_post_webhook_paid_confirms_payment(client, order):
         WEBHOOK_URL,
         data=json.dumps(
             {
-                "transactions": {
+                "transaction": {
                     "status": "Paid",
                     "identifier": f"{order.code}-{payment.pk}",
                     "method": "MW:PT",
@@ -138,7 +138,7 @@ def test_post_webhook_non_paid_status_does_not_confirm(client, order):
         WEBHOOK_URL,
         data=json.dumps(
             {
-                "transactions": {
+                "transaction": {
                     "status": "Pending",
                     "identifier": f"{order.code}-{payment.pk}",
                 }
@@ -165,7 +165,7 @@ def test_post_webhook_invalid_json_is_bad_request(client):
 def test_post_webhook_paid_without_identifier_is_bad_request(client):
     response = client.post(
         WEBHOOK_URL,
-        data=json.dumps({"transactions": {"status": "Paid", "identifier": ""}}),
+        data=json.dumps({"transaction": {"status": "Paid", "identifier": ""}}),
         content_type="application/json",
     )
     assert response.status_code == 400
@@ -181,7 +181,7 @@ def test_post_webhook_refund_status_creates_external_refund(client, order):
         WEBHOOK_URL,
         data=json.dumps(
             {
-                "transactions": {
+                "transaction": {
                     "status": "Refund",
                     "identifier": f"{order.code}-{payment.pk}",
                     "method": "PC:PT",
@@ -206,7 +206,7 @@ def test_post_webhook_refund_status_ignored_for_unpaid_payment(client, order):
         WEBHOOK_URL,
         data=json.dumps(
             {
-                "transactions": {
+                "transaction": {
                     "status": "Refund",
                     "identifier": f"{order.code}-{payment.pk}",
                 }
@@ -227,7 +227,7 @@ def test_post_webhook_requires_signature_when_secret_configured(client, order, e
     payment = make_confirmable_payment(order, "eupago_mbway")
     body = json.dumps(
         {
-            "transactions": {
+            "transaction": {
                 "status": "Paid",
                 "identifier": f"{order.code}-{payment.pk}",
             }
@@ -249,7 +249,7 @@ def test_post_webhook_invalid_signature_is_rejected(client, order, event):
     payment = make_confirmable_payment(order, "eupago_mbway")
     body = json.dumps(
         {
-            "transactions": {
+            "transaction": {
                 "status": "Paid",
                 "identifier": f"{order.code}-{payment.pk}",
             }
@@ -276,7 +276,7 @@ def test_post_webhook_valid_signature_confirms_payment(client, order, event):
     payment = make_confirmable_payment(order, "eupago_mbway")
     body = json.dumps(
         {
-            "transactions": {
+            "transaction": {
                 "status": "Paid",
                 "identifier": f"{order.code}-{payment.pk}",
             }
@@ -303,7 +303,7 @@ def test_post_webhook_encrypted_payload_confirms_payment(client, order, event):
     payment = make_confirmable_payment(order, "eupago_mbway")
     plaintext = json.dumps(
         {
-            "transactions": {
+            "transaction": {
                 "status": "Paid",
                 "identifier": f"{order.code}-{payment.pk}",
             }
@@ -331,7 +331,7 @@ def test_post_webhook_encrypted_payload_wrong_secret_is_ignored(client, order, e
     payment = make_confirmable_payment(order, "eupago_mbway")
     plaintext = json.dumps(
         {
-            "transactions": {
+            "transaction": {
                 "status": "Paid",
                 "identifier": f"{order.code}-{payment.pk}",
             }

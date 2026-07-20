@@ -69,8 +69,10 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   https://eupago.readme.io/reference/realtime-webhooks-20):
   - v1.0: `GET` with query-string params (`identificador`, `mp`, `chave_api`, ...). Only sent for paid
     references — euPago does not send v1.0 notifications for expired/canceled/refunded ones.
-  - v2.0: `POST` with a JSON body (`transactions.status/identifier/method`), statuses `Paid`, `Refund`,
-    `Error`, `Cancel`, `Expired`.
+  - v2.0: `POST` with a JSON body (`transaction.status/identifier/method`), statuses `Paid`, `Refund`,
+    `Error`, `Cancel`, `Expired`. Note the real payload key is singular `transaction`, even though
+    euPago's own docs at the link above call it `transactions` (plural) — verified against a live
+    webhook payload.
   Both paths funnel through `_lookup_payment(identifier)`, which parses the identifier as
   `"{order.code}-{payment.pk}"` (via `rsplit("-", 1)`), looks up the `OrderPayment`, and cross-checks the
   identifier stored in `payment.info_data`. That cross-check alone is **not** sufficient authentication —
@@ -97,8 +99,8 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     second notification, don't double-refund).
   - **v2.0 encrypted mode**: euPago's Backoffice has an optional per-channel "encrypt" toggle for
     webhooks; when enabled, the POST body is `{"data": "<base64 AES-256-CBC ciphertext>", ...}` (no
-    plaintext `transactions`) with the IV in an `X-Initialization-Vector` header, keyed with the same
-    per-channel secret as `X-Signature`. `post()` detects this (`"data" in data and "transactions" not
+    plaintext `transaction`) with the IV in an `X-Initialization-Vector` header, keyed with the same
+    per-channel secret as `X-Signature`. `post()` detects this (`"data" in data and "transaction" not
     in data`) and calls `_decrypt_payload()`, which — since this is one global endpoint shared by every
     event and there's no way to know which event a request belongs to before decrypting it — tries every
     event's configured `eupago_webhook_secret` in turn via `_aes_cbc_decrypt()` until one produces
