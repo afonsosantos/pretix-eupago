@@ -17,6 +17,10 @@ pretix-eupago
    :target: https://github.com/afonsosantos/pretix-eupago/actions/workflows/ci.yml
    :alt: CI status
 
+.. image:: https://deepwiki.com/badge.svg
+   :target: https://deepwiki.com/afonsosantos/pretix-eupago
+   :alt: DeepWiki
+
 This is a plugin for `pretix`_ that integrates `euPago`_, a Portuguese payment
 gateway, to accept **Multibanco** references and **MB WAY** push payments.
 
