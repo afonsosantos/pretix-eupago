@@ -3,6 +3,7 @@ import json
 import pytest
 import responses
 from django.test import RequestFactory
+from pretix.base.models import OrderPayment
 from pretix.base.payment import PaymentException
 
 from pretix_eupago.payment import MBWAY_URL, EupagoMBWAY
@@ -46,6 +47,7 @@ def test_execute_payment_normalizes_phone(provider, order, raw_phone, expected):
     assert info["phone"] == expected
     assert info["transactionID"] == "abc-123"
     assert info["identifier"] == f"{order.code}-{payment.pk}"
+    assert payment.state == OrderPayment.PAYMENT_STATE_PENDING
 
 
 @pytest.mark.django_db

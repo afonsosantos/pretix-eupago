@@ -33,11 +33,18 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   - `EupagoMultibanco` — no checkout form fields, but has its own `settings_form_fields` override for
     `multibanco_expiry_days` (provider-specific, read via `self.settings`, pretix's per-provider
     `SettingsSandbox`). `execute_payment` calls euPago's `multibanco/create` REST API and stores
-    `referencia`/`entidade`/expiry in `payment.info` (JSON). Payment stays pending until the webhook
-    confirms it.
+    `referencia`/`entidade`/expiry in `payment.info` (JSON), then sets `payment.state =
+    PAYMENT_STATE_PENDING` (matching how pretix's own `stripe` plugin behaves — without this, the
+    payment stays in `created`, and pretix's own `OrderPaymentComplete`/`OrderPaymentStart` guards, which
+    only reject re-entry once the state has moved *away* from `created`, would let a customer who
+    revisits their payment link retrigger `execute_payment` and generate a second reference). Payment
+    stays pending until the webhook confirms it.
   - `EupagoMBWAY` — checkout form collects a phone number (also has a `payment_prepare` path for the
     "retry payment" flow on the order page); `execute_payment` normalizes the phone to euPago's
-    `351#XXXXXXXXX` format and calls `mbway/create`. Also pending until webhook confirmation.
+    `351#XXXXXXXXX` format, calls `mbway/create`, and likewise sets `payment.state =
+    PAYMENT_STATE_PENDING` for the same re-entry reason as Multibanco — for MB WAY this specifically
+    guards against a revisit sending a duplicate push notification to the customer's phone. Also pending
+    until webhook confirmation.
   - Both providers implement `payment_pending_render` / `payment_control_render` (per-provider
     templates), `api_payment_details`, `matching_id`, and `shred_payment_info` (MB WAY redacts the
     phone number; Multibanco has nothing to shred).
@@ -64,6 +71,20 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     settings nav at it (`plugins:pretix_eupago:settings`).
   - `pretix_eupago/templates/pretix_eupago/settings.html` extends
     `pretixcontrol/event/settings_base.html`, the standard shell for this kind of page.
+- `pretix_eupago/views.py` also defines `EupagoOrdersView` (`EventPermissionRequiredMixin` +
+  `ListView`, `permission = "event.orders:read"`), a Control-panel page listing every
+  `OrderPayment` for the event with `provider` in `eupago_multibanco`/`eupago_mbway`, alongside the
+  method-specific data read straight from `payment.info_data` (Multibanco entidade/referencia, MB
+  WAY transactionID) — the same data the webhook handler and order detail page use. Filterable by
+  provider/state via GET params, paginated.
+  - `pretix_eupago/urls.py` registers it at `control/event/<organizer>/<event>/eupago/orders`
+    (same non-`event_patterns` pattern as the settings page above).
+  - `pretix_eupago/signals.py` adds a `nav_event` receiver (not `settings_links`, since this is a
+    full page, not a settings form) to put "euPago orders" in the event's Control-panel sidebar,
+    following the same pattern as pretix's own `banktransfer` plugin's `nav_event` receiver.
+  - `pretix_eupago/templates/pretix_eupago/orders.html` extends `pretixcontrol/event/base.html`
+    (the plain-page shell, as opposed to `settings_base.html` used by the settings page) and reuses
+    `pretixcontrol/pagination.html` for paging.
 - `pretix_eupago/views.py` — `EupagoWebhookView`, a CSRF-exempt Django view handling **both** euPago
   webhook formats (see https://eupago.readme.io/reference/webhooks and
   https://eupago.readme.io/reference/realtime-webhooks-20):
@@ -129,6 +150,28 @@ Every payment sent to euPago is tagged with `identifier = f"{payment.order.code}
 identifier is both sent to euPago as the transaction id and stored back into `payment.info_data`. The
 webhook handler relies on this exact format (and the stored copy) to locate and authenticate the
 payment being confirmed — keep both sides in sync if this format ever changes.
+
+### Multibanco reference delivery by email
+
+`EupagoMultibanco.order_pending_mail_render` is `BasePaymentProvider`'s standard hook for the
+`{payment_info}` placeholder in pretix's own "order placed" email — but pretix core
+(`_perform_order` in `pretix.base.services.orders`) always sends that email *before* calling
+`execute_payment` for any provider that doesn't set `execute_payment_needs_user = False` (the
+default, which this plugin doesn't override, since `execute_payment` here does need the real
+`request`/session for MB WAY's phone fallback and there's no supported pretix hook to run a
+third-party provider's `execute_payment` earlier — that early-execution path in `_perform_order`
+is hard-coded to the built-in `GiftCardPayment` only). So by the time that first email is
+rendered, `payment.info` is still empty and `order_pending_mail_render` correctly returns `""` —
+the reference isn't lost, it just doesn't exist yet. Relying on `order_pending_mail_render` alone
+would mean the customer never receives it by email at all.
+
+To work around this, `EupagoMultibanco.execute_payment` sends its own follow-up email directly via
+`payment.order.send_mail(..., template="pretix_eupago/mail_multibanco.txt", context={"info": info,
+"payment": payment})` right after the reference is generated. `order_pending_mail_render` is kept
+too — it's still what populates `{payment_info}` on other emails sent *after* `execute_payment` has
+already run (e.g. an admin manually resending the order confirmation from Control). MB WAY doesn't
+need an equivalent: it's a push payment with nothing to display, so there's no email content it
+would add either way.
 
 ### Displaying amounts
 
@@ -218,6 +261,30 @@ imports.
   without permission returns `404`, not `403` — matches pretix's own convention of not revealing that a
   resource exists to users without access.
 
+## Translations
+
+`pretix_eupago/locale/<lang>/LC_MESSAGES/` holds gettext catalogs (currently `pt_PT`). Since
+`pretix_eupago` is a real Django app (see "Plugin registration mechanics" above), Django's i18n
+machinery discovers this automatically — no pretix-specific wiring needed, `{% load i18n %}` /
+`_()` / `gettext_lazy()` calls throughout the codebase just work once a `.mo` file exists.
+
+- `make translate` — extracts `_()`/`gettext_lazy()`/`{% trans %}` strings into
+  `locale/<lang>/LC_MESSAGES/django.po` (merging into any existing translations).
+- `make compile-translations` — compiles `.po` → `.mo`. **Must run before `uv build`** — only
+  `.mo` files are loaded at runtime, and `package-data` in `pyproject.toml` just ships whatever's
+  already on disk; it doesn't compile anything.
+- To add a language: `mkdir -p pretix_eupago/locale/<lang>/LC_MESSAGES`, add it to `LOCALES` in
+  the `Makefile`, then `make translate`.
+- Both targets deliberately configure a bare `django.conf.settings.configure(USE_I18N=True)`
+  instead of pointing `DJANGO_SETTINGS_MODULE` at `tests.settings` (i.e. pretix's own settings).
+  pretix's `settings.py` sets `LOCALE_PATHS` to pretix core's *own* bundled locale directory, and
+  `makemessages`/`compilemessages` treat every `LOCALE_PATHS` entry as a target, not just the
+  current app's — running them against pretix's settings module extracts this plugin's strings
+  *into pretix core's own installed catalogs* (`.venv/…/pretix/locale/*/LC_MESSAGES/django.po`),
+  corrupting the installed pretix package. Discovered the hard way; if `.venv`'s pretix install
+  ever turns up with `euPago` strings in unrelated languages, `rm -rf .venv && uv sync --extra
+  test` restores a clean copy.
+
 ## Commands
 
 To manually exercise changes against a real pretix instance (beyond what the test suite covers):
@@ -257,4 +324,6 @@ uvx twine check dist/*
   (https://pypi.org/manage/account/publishing/).
 
 Bump the version in both `pyproject.toml` and `pretix_eupago/__init__.py` before cutting a release —
-they are not currently kept in sync automatically.
+run `make bump-version <version>` (e.g. `make bump-version 1.2.0`) rather than editing them by hand, so
+the two stay in sync. It doesn't touch `uv.lock`; run `uv lock` afterward so the lockfile's own
+`pretix-eupago` entry matches.

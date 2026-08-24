@@ -1,13 +1,14 @@
 import json
 import logging
 from collections import OrderedDict
-from datetime import date, timedelta
+from datetime import timedelta
 
 import requests
 from django import forms
 from django.http import HttpRequest
 from django.template.loader import get_template
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from pretix.base.models import OrderPayment
 from pretix.base.payment import BasePaymentProvider, PaymentException
@@ -112,7 +113,9 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
         expiry_days = self.settings.get(
             "multibanco_expiry_days", as_type=int, default=MULTIBANCO_EXPIRY_DAYS
         )
-        expiry = (date.today() + timedelta(days=expiry_days)).strftime("%Y-%m-%d")
+        expiry = (timezone.now().date() + timedelta(days=expiry_days)).strftime(
+            "%Y-%m-%d"
+        )
         identifier = f"{payment.order.code}-{payment.pk}"
 
         payload = {
@@ -150,17 +153,28 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
                 )
             )
 
-        payment.info = json.dumps(
-            {
-                "referencia": data["referencia"],
-                "entidade": data["entidade"],
-                "valor": str(data.get("valor", payment.amount)),
-                "identifier": identifier,
-                "expiry": expiry,
-            }
-        )
-        payment.save(update_fields=["info"])
+        info = {
+            "referencia": data["referencia"],
+            "entidade": data["entidade"],
+            "valor": str(data.get("valor", payment.amount)),
+            "identifier": identifier,
+            "expiry": expiry,
+        }
+        payment.info = json.dumps(info)
+        payment.state = OrderPayment.PAYMENT_STATE_PENDING
+        payment.save(update_fields=["info", "state"])
         # Payment is pending — confirmed via webhook when customer pays.
+
+        # The "order placed" email is sent by pretix core before execute_payment runs
+        # (it can't know the reference yet), so {payment_info} is empty there. Send the
+        # reference separately once we actually have it.
+        payment.order.send_mail(
+            subject=_("Payment details for your order: {code}").format(
+                code=payment.order.code
+            ),
+            template="pretix_eupago/mail_multibanco.txt",
+            context={"info": info, "payment": payment},
+        )
 
     def payment_pending_render(self, request, payment) -> str:
         template = get_template("pretix_eupago/pending_multibanco.html")
@@ -218,13 +232,13 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
         )
 
     def payment_is_valid_session(self, request):
-        return bool(request.session.get("payment_%s_phone" % self.identifier))
+        return bool(request.session.get(f"payment_{self.identifier}_phone"))
 
     def checkout_confirm_render(self, request) -> str:
         template = get_template("pretix_eupago/checkout_mbway.html")
         return template.render(
             {
-                "phone": request.session.get("payment_%s_phone" % self.identifier, ""),
+                "phone": request.session.get(f"payment_{self.identifier}_phone", ""),
                 "request": request,
             }
         )
@@ -242,7 +256,7 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
         # Phone may come from payment.info (payment_prepare flow) or session (checkout flow).
         info = payment.info_data or {}
         phone = info.get("phone") or request.session.get(
-            "payment_%s_phone" % self.identifier, ""
+            f"payment_{self.identifier}_phone", ""
         )
 
         if not phone:
@@ -288,7 +302,8 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
                 "identifier": identifier,
             }
         )
-        payment.save(update_fields=["info"])
+        payment.state = OrderPayment.PAYMENT_STATE_PENDING
+        payment.save(update_fields=["info", "state"])
         # Payment is pending — confirmed via webhook when customer approves in app.
 
     def payment_pending_render(self, request, payment) -> str:

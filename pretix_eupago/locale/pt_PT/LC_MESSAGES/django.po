@@ -1,0 +1,269 @@
+# Portuguese (Portugal) translations for pretix-eupago.
+# Copyright (C) 2026 Afonso Santos
+# This file is distributed under the same license as the pretix-eupago package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: pretix-eupago\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-08-24 22:33+0000\n"
+"PO-Revision-Date: 2026-08-24 22:33+0000\n"
+"Last-Translator: Afonso Santos\n"
+"Language-Team: Portuguese (Portugal)\n"
+"Language: pt_PT\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "euPago Payments"
+msgstr "Pagamentos euPago"
+
+msgid "Accept Multibanco and MB WAY payments via euPago"
+msgstr "Aceite pagamentos Multibanco e MB WAY através da euPago"
+
+msgid "Payment"
+msgstr "Pagamento"
+
+msgid "euPago"
+msgstr "euPago"
+
+msgid "euPago sandbox mode is active. No real payments will be processed."
+msgstr "O modo de sandbox da euPago está ativo. Não serão processados pagamentos reais."
+
+msgid "The API key and sandbox mode are configured on the"
+msgstr "A chave API e o modo de sandbox são configurados na"
+
+msgid "general euPago settings page"
+msgstr "página de definições gerais da euPago"
+
+msgid "Multibanco (euPago)"
+msgstr "Multibanco (euPago)"
+
+msgid "Multibanco"
+msgstr "Multibanco"
+
+msgid "Multibanco reference validity (days)"
+msgstr "Validade da referência Multibanco (dias)"
+
+msgid "How many days the Multibanco reference remains valid."
+msgstr "Durante quantos dias a referência Multibanco permanece válida."
+
+msgid "Could not reach the payment provider. Please try again later."
+msgstr "Não foi possível contactar o fornecedor de pagamentos. Por favor tente novamente mais tarde."
+
+msgid ""
+"The payment provider returned an error. Please try a different payment "
+"method."
+msgstr ""
+"O fornecedor de pagamentos devolveu um erro. Por favor tente um método de "
+"pagamento diferente."
+
+#, python-brace-format
+msgid "Payment details for your order: {code}"
+msgstr "Detalhes de pagamento do seu pedido: {code}"
+
+msgid "MB WAY (euPago)"
+msgstr "MB WAY (euPago)"
+
+msgid "MB WAY"
+msgstr "MB WAY"
+
+msgid "MB WAY phone number"
+msgstr "Número de telemóvel MB WAY"
+
+msgid ""
+"Portuguese mobile number registered with MB WAY (e.g. 912 345 678). You have "
+"5 minutes to approve the payment in the MB WAY app."
+msgstr ""
+"Número de telemóvel português registado no MB WAY (por exemplo, 912 345 "
+"678). Tem 5 minutos para aprovar o pagamento na aplicação MB WAY."
+
+msgid "No MB WAY phone number was provided."
+msgstr "Não foi fornecido nenhum número de telemóvel MB WAY."
+
+msgid "euPago orders"
+msgstr "Pedidos euPago"
+
+msgid ""
+"You will receive a payment request in the <strong>MB WAY app</strong> on "
+"your phone. You have <strong>5 minutes</strong> to approve it after placing "
+"your order."
+msgstr ""
+"Irá receber um pedido de pagamento na <strong>aplicação MB WAY</strong> no "
+"seu telemóvel. Tem <strong>5 minutos</strong> para o aprovar depois de "
+"finalizar o seu pedido."
+
+#, python-format
+msgid "Payment request will be sent to: <strong>%(phone)s</strong>"
+msgstr "O pedido de pagamento será enviado para: <strong>%(phone)s</strong>"
+
+msgid ""
+"Make sure your phone is on and the MB WAY app is active before confirming."
+msgstr ""
+"Certifique-se de que o seu telemóvel está ligado e a aplicação MB WAY está "
+"ativa antes de confirmar."
+
+msgid ""
+"After placing your order you will receive a <strong>Multibanco entity and "
+"reference number</strong> that you can use to pay at any ATM or through your "
+"bank's online portal."
+msgstr ""
+"Depois de finalizar o seu pedido irá receber uma <strong>entidade e número "
+"de referência Multibanco</strong> que pode usar para pagar em qualquer "
+"Multibanco ou através do portal online do seu banco."
+
+msgid ""
+"The reference will be valid for a limited time. Please complete your payment "
+"before it expires."
+msgstr ""
+"A referência será válida por um período limitado. Por favor conclua o seu "
+"pagamento antes que expire."
+
+msgid "Transaction ID"
+msgstr "ID da transação"
+
+msgid "Phone"
+msgstr "Telemóvel"
+
+msgid "Identifier"
+msgstr "Identificador"
+
+msgid "No MB WAY transaction on record."
+msgstr "Nenhuma transação MB WAY registada."
+
+msgid "Entity"
+msgstr "Entidade"
+
+msgid "Reference"
+msgstr "Referência"
+
+msgid "Amount"
+msgstr "Valor"
+
+msgid "Valid until"
+msgstr "Válido até"
+
+msgid "No Multibanco reference on record."
+msgstr "Nenhuma referência Multibanco registada."
+
+msgid "To complete your payment, use the following Multibanco details:"
+msgstr "Para concluir o seu pagamento, utilize os seguintes dados Multibanco:"
+
+msgid ""
+"Pay at any ATM or through your bank's online portal (homebanking). Your "
+"order will be confirmed automatically once the payment is received."
+msgstr ""
+"Pague em qualquer Multibanco ou através do portal online do seu banco "
+"(homebanking). O seu pedido será confirmado automaticamente assim que o "
+"pagamento for recebido."
+
+msgid "Method"
+msgstr "Método"
+
+msgid "All"
+msgstr "Todos"
+
+msgid "Status"
+msgstr "Estado"
+
+msgid "Filter"
+msgstr "Filtrar"
+
+msgid "Order"
+msgstr "Pedido"
+
+msgid "Order status"
+msgstr "Estado do pedido"
+
+msgid "Payment status"
+msgstr "Estado do pagamento"
+
+msgid "Method details"
+msgstr "Detalhes do método"
+
+msgid "Created"
+msgstr "Criado"
+
+msgid "Not generated yet"
+msgstr "Ainda não gerado"
+
+msgid "No euPago payments found."
+msgstr "Não foram encontrados pagamentos euPago."
+
+msgid ""
+"A payment request has been sent to your MB WAY app. Please open the app and "
+"approve the payment within <strong>5 minutes</strong>."
+msgstr ""
+"Foi enviado um pedido de pagamento para a sua aplicação MB WAY. Por favor "
+"abra a aplicação e aprove o pagamento dentro de <strong>5 minutos</strong>."
+
+#, python-format
+msgid "Sent to: %(phone)s"
+msgstr "Enviado para: %(phone)s"
+
+msgid ""
+"Your order will be confirmed automatically once the payment is approved. If "
+"the request expires, you can retry the payment from your order page."
+msgstr ""
+"O seu pedido será confirmado automaticamente assim que o pagamento for "
+"aprovado. Se o pedido expirar, pode tentar novamente o pagamento a partir "
+"da página do seu pedido."
+
+msgid ""
+"Pay at any ATM (Caixa Automático) or through your bank's online portal "
+"(homebanking). Your order will be confirmed automatically once the payment "
+"is received."
+msgstr ""
+"Pague em qualquer Caixa Automático (Multibanco) ou através do portal online "
+"do seu banco (homebanking). O seu pedido será confirmado automaticamente "
+"assim que o pagamento for recebido."
+
+msgid ""
+"Payment reference is being generated. Please refresh this page in a moment."
+msgstr ""
+"A referência de pagamento está a ser gerada. Por favor atualize esta página "
+"dentro de momentos."
+
+msgid ""
+"These settings are shared by all euPago payment methods (Multibanco and MB "
+"WAY). Each payment method can still be enabled or disabled individually "
+"under Settings → Payment."
+msgstr ""
+"Estas definições são partilhadas por todos os métodos de pagamento euPago "
+"(Multibanco e MB WAY). Cada método de pagamento pode continuar a ser "
+"ativado ou desativado individualmente em Definições → Pagamento."
+
+msgid "Save"
+msgstr "Guardar"
+
+msgid "API Key"
+msgstr "Chave API"
+
+msgid "Your euPago API key, found in Backoffice → Channels → Channel Listing."
+msgstr ""
+"A sua chave API da euPago, disponível em Backoffice → Canais → Listagem de "
+"Canais."
+
+msgid "Sandbox / Test mode"
+msgstr "Sandbox / Modo de teste"
+
+msgid "Use the euPago sandbox environment for testing."
+msgstr "Utilize o ambiente de sandbox da euPago para testes."
+
+msgid "Webhook signature secret"
+msgstr "Segredo de assinatura do webhook"
+
+msgid ""
+"Optional but strongly recommended. The encryption key generated for this "
+"channel's webhook in Backoffice → Channels → Channel Listing → Receive "
+"notification for a URL. When set, incoming webhook v2.0 (POST) notifications "
+"are only accepted if their X-Signature header matches — without it, "
+"notifications are accepted based on a weaker cross-check only."
+msgstr ""
+"Opcional mas fortemente recomendado. A chave de encriptação gerada para o "
+"webhook deste canal em Backoffice → Canais → Listagem de Canais → Receber "
+"notificação para um URL. Quando definida, as notificações do webhook v2.0 "
+"(POST) recebidas só são aceites se o seu cabeçalho X-Signature corresponder "
+"— sem ela, as notificações são aceites apenas com base numa verificação "
+"cruzada mais fraca."

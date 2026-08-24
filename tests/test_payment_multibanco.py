@@ -1,9 +1,12 @@
 import json
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 import responses
+from django.core import mail
 from django.test import RequestFactory
+from django.utils import timezone
+from pretix.base.models import OrderPayment
 from pretix.base.payment import PaymentException
 
 from pretix_eupago.payment import MULTIBANCO_URL, EupagoMultibanco
@@ -40,7 +43,14 @@ def test_execute_payment_success(provider, order):
     assert info["referencia"] == "123456789"
     assert info["entidade"] == "12345"
     assert info["identifier"] == f"{order.code}-{payment.pk}"
-    assert info["expiry"] == (date.today() + timedelta(days=7)).strftime("%Y-%m-%d")
+    assert info["expiry"] == (timezone.now().date() + timedelta(days=7)).strftime(
+        "%Y-%m-%d"
+    )
+    assert payment.state == OrderPayment.PAYMENT_STATE_PENDING
+
+    assert len(mail.outbox) == 1
+    assert "123 456 789" in mail.outbox[0].body
+    assert "12345" in mail.outbox[0].body
 
 
 @pytest.mark.django_db
@@ -63,7 +73,9 @@ def test_execute_payment_uses_configured_expiry(provider, order):
     provider.execute_payment(RequestFactory().post("/"), payment)
 
     info = json.loads(payment.info)
-    assert info["expiry"] == (date.today() + timedelta(days=14)).strftime("%Y-%m-%d")
+    assert info["expiry"] == (timezone.now().date() + timedelta(days=14)).strftime(
+        "%Y-%m-%d"
+    )
 
 
 @pytest.mark.django_db

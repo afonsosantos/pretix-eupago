@@ -14,13 +14,17 @@ from django.utils.decorators import method_decorator
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from django.views.generic import ListView
 from django_scopes import scopes_disabled
 from pretix.base.forms import SettingsForm
 from pretix.base.models import Event, Event_SettingsStore, OrderPayment
+from pretix.control.permissions import EventPermissionRequiredMixin
 from pretix.control.views.event import (
     EventSettingsFormView,
     EventSettingsViewMixin,
 )
+
+EUPAGO_PROVIDERS = ("eupago_multibanco", "eupago_mbway")
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,48 @@ class EupagoSettings(EventSettingsViewMixin, EventSettingsFormView):
                 "event": self.request.event.slug,
             },
         )
+
+
+class EupagoOrdersView(EventPermissionRequiredMixin, ListView):
+    """
+    Lists every OrderPayment made with a euPago provider for this event, along with the
+    method-specific data (Multibanco entidade/referencia, MB WAY transactionID) stashed in
+    payment.info by execute_payment — the same data the order detail page and the webhook
+    handler read from.
+    """
+
+    template_name = "pretix_eupago/orders.html"
+    permission = "event.orders:read"
+    context_object_name = "payments"
+    paginate_by = 50
+
+    def get_queryset(self):
+        qs = (
+            OrderPayment.objects.filter(
+                order__event=self.request.event, provider__in=EUPAGO_PROVIDERS
+            )
+            .select_related("order")
+            .order_by("-created")
+        )
+
+        provider = self.request.GET.get("provider")
+        if provider in EUPAGO_PROVIDERS:
+            qs = qs.filter(provider=provider)
+
+        state = self.request.GET.get("state")
+        if state in dict(OrderPayment.PAYMENT_STATES):
+            qs = qs.filter(state=state)
+
+        return qs
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["provider_choices"] = (
+            ("eupago_multibanco", _("Multibanco")),
+            ("eupago_mbway", _("MB WAY")),
+        )
+        ctx["state_choices"] = OrderPayment.PAYMENT_STATES
+        return ctx
 
 
 @method_decorator(csrf_exempt, name="dispatch")

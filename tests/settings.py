@@ -1,1 +1,1 @@
-from pretix.testutils.settings import *  # NOQA
+from pretix.testutils.settings import *

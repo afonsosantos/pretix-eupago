@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from django.utils.translation import gettext_lazy as _
 from pretix.base.plugins import PluginConfig
 
@@ -18,7 +20,7 @@ class PluginApp(PluginConfig):
         version = __version__
         category = "PAYMENT"
         compatibility = "pretix>=4.0.0"
-        settings_links = [
+        settings_links: ClassVar = [
             ((_("Payment"), _("euPago")), "plugins:pretix_eupago:settings", {}),
         ]
 

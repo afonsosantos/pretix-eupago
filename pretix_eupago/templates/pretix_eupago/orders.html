@@ -1,0 +1,96 @@
+{% extends "pretixcontrol/event/base.html" %}
+{% load i18n %}
+{% load money %}
+{% block title %}{% trans "euPago orders" %}{% endblock %}
+{% block content %}
+    <h1>{% trans "euPago orders" %}</h1>
+
+    <form class="form-inline filter-form" action="" method="get">
+        <div class="form-group">
+            <label for="id_provider">{% trans "Method" %}</label>
+            <select name="provider" id="id_provider" class="form-control">
+                <option value="">{% trans "All" %}</option>
+                {% for value, label in provider_choices %}
+                    <option value="{{ value }}" {% if request.GET.provider == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="id_state">{% trans "Status" %}</label>
+            <select name="state" id="id_state" class="form-control">
+                <option value="">{% trans "All" %}</option>
+                {% for value, label in state_choices %}
+                    <option value="{{ value }}" {% if request.GET.state == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button type="submit" class="btn btn-default">
+            <span class="fa fa-filter"></span> {% trans "Filter" %}
+        </button>
+    </form>
+
+    <div class="table-responsive">
+        <table class="table table-condensed table-hover">
+            <thead>
+            <tr>
+                <th>{% trans "Order" %}</th>
+                <th>{% trans "Order status" %}</th>
+                <th>{% trans "Method" %}</th>
+                <th>{% trans "Payment status" %}</th>
+                <th>{% trans "Method details" %}</th>
+                <th class="text-right flip">{% trans "Amount" %}</th>
+                <th>{% trans "Created" %}</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for payment in payments %}
+                <tr>
+                    <td>
+                        <strong>
+                            <a href="{% url "control:event.order" event=request.event.slug organizer=request.event.organizer.slug code=payment.order.code %}">
+                                {{ payment.order.code }}
+                            </a>
+                        </strong>
+                        <br>
+                        <span class="text-muted">{{ payment.order.email|default_if_none:"" }}</span>
+                    </td>
+                    <td>{{ payment.order.get_status_display }}</td>
+                    <td>
+                        {% if payment.provider == "eupago_multibanco" %}
+                            {% trans "Multibanco" %}
+                        {% else %}
+                            {% trans "MB WAY" %}
+                        {% endif %}
+                    </td>
+                    <td>{{ payment.get_state_display }}</td>
+                    <td>
+                        {% if payment.provider == "eupago_multibanco" %}
+                            {% if payment.info_data.entidade %}
+                                {% trans "Entity" %}: {{ payment.info_data.entidade }}<br>
+                                {% trans "Reference" %}: {{ payment.info_data.referencia }}
+                            {% else %}
+                                <span class="text-muted">{% trans "Not generated yet" %}</span>
+                            {% endif %}
+                        {% else %}
+                            {% if payment.info_data.transactionID %}
+                                {% trans "Transaction ID" %}: {{ payment.info_data.transactionID }}
+                            {% else %}
+                                <span class="text-muted">{% trans "Not generated yet" %}</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+                    <td class="text-right flip">{{ payment.amount|money:request.event.currency }}</td>
+                    <td>{{ payment.created|date:"SHORT_DATETIME_FORMAT" }}</td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="7" class="text-center text-muted">
+                        {% trans "No euPago payments found." %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% include "pretixcontrol/pagination.html" %}
+{% endblock %}
