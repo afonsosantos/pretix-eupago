@@ -262,13 +262,13 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
         if not phone:
             raise PaymentException(_("No MB WAY phone number was provided."))
 
-        # Normalise: strip whitespace, leading +351 or 351, then prefix "351#"
+        # Normalise: strip whitespace/spaces and any leading country code, leaving
+        # just the 9-digit national number euPago's `customerPhone` field expects.
         phone = phone.strip().replace(" ", "")
         for prefix in ("+351", "351"):
             if phone.startswith(prefix):
                 phone = phone[len(prefix) :]
                 break
-        phone = "351#" + phone
 
         identifier = f"{payment.order.code}-{payment.pk}"
 
@@ -276,8 +276,9 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
             "payment": {
                 "amount": {"value": float(payment.amount), "currency": "EUR"},
                 "identifier": identifier,
+                "customerPhone": phone,
+                "countryCode": "+351",
             },
-            "customer": {"phone": phone},
         }
 
         try:

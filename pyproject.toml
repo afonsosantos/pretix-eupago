@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pretix-eupago"
-version = "1.2.0"
+version = "1.2.1"
 description = "Accept Multibanco and MB WAY payments via euPago in pretix"
 readme = "README.rst"
 requires-python = ">=3.11"

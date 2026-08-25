@@ -22,10 +22,10 @@ def provider(event):
 @pytest.mark.parametrize(
     "raw_phone,expected",
     [
-        ("912345678", "351#912345678"),
-        ("351912345678", "351#912345678"),
-        ("+351912345678", "351#912345678"),
-        (" 912 345 678 ", "351#912345678"),
+        ("912345678", "912345678"),
+        ("351912345678", "912345678"),
+        ("+351912345678", "912345678"),
+        (" 912 345 678 ", "912345678"),
     ],
 )
 @responses.activate
@@ -36,13 +36,15 @@ def test_execute_payment_normalizes_phone(provider, order, raw_phone, expected):
     responses.add(
         responses.POST,
         MBWAY_URL["sandbox"],
-        json={"transactionID": "abc-123"},
-        status=200,
+        json={"transactionStatus": "Success", "transactionID": "abc-123"},
+        status=201,
     )
 
     provider.execute_payment(RequestFactory().post("/"), payment)
 
-    assert json.loads(responses.calls[0].request.body)["customer"]["phone"] == expected
+    sent = json.loads(responses.calls[0].request.body)["payment"]
+    assert sent["customerPhone"] == expected
+    assert sent["countryCode"] == "+351"
     info = json.loads(payment.info)
     assert info["phone"] == expected
     assert info["transactionID"] == "abc-123"
@@ -67,8 +69,8 @@ def test_execute_payment_falls_back_to_session_phone(provider, order):
     responses.add(
         responses.POST,
         MBWAY_URL["sandbox"],
-        json={"transactionID": "abc-123"},
-        status=200,
+        json={"transactionStatus": "Success", "transactionID": "abc-123"},
+        status=201,
     )
 
     request = RequestFactory().post("/")
@@ -77,7 +79,7 @@ def test_execute_payment_falls_back_to_session_phone(provider, order):
     provider.execute_payment(request, payment)
 
     info = json.loads(payment.info)
-    assert info["phone"] == "351#912345678"
+    assert info["phone"] == "912345678"
 
 
 @pytest.mark.django_db
@@ -134,7 +136,7 @@ def test_shred_payment_info_redacts_phone(provider, order):
     payment = make_payment(
         order,
         provider.identifier,
-        info=json.dumps({"phone": "351#912345678", "transactionID": "abc-123"}),
+        info=json.dumps({"phone": "912345678", "transactionID": "abc-123"}),
     )
 
     provider.shred_payment_info(payment)
