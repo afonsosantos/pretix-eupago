@@ -216,7 +216,14 @@ class EupagoWebhookView(View):
             identifier,
         )
 
-        if status not in ("Paid", "Refund", "Refunded"):
+        if status not in (
+            "Paid",
+            "Refund",
+            "Refunded",
+            "Cancel",
+            "Canceled",
+            "Expired",
+        ):
             return HttpResponse("OK", content_type="text/plain")
 
         if not identifier:
@@ -248,6 +255,8 @@ class EupagoWebhookView(View):
 
         if status == "Paid":
             self._confirm_payment(payment)
+        elif status in ("Cancel", "Canceled", "Expired"):
+            self._fail_payment(payment, status)
         else:
             self._refund_payment(payment)
 
@@ -347,6 +356,24 @@ class EupagoWebhookView(View):
             )
         except Exception:
             logger.exception("euPago webhook: error confirming payment %s", payment.pk)
+
+    def _fail_payment(self, payment: OrderPayment, status: str):
+        """
+        Mark a pending payment as failed after euPago reports the customer canceled the
+        MB WAY push (or the reference expired). pretix's ``OrderPayment.fail()`` only acts
+        on payments in created/pending/canceled state and is race-safe against a
+        simultaneous confirmation, so a stray Cancel/Expired after a Paid is a no-op.
+        No refund is involved — the payment never completed.
+        """
+        try:
+            info = dict(payment.info_data or {})
+            info["eupago_webhook_status"] = status
+            payment.fail(info=info)
+            logger.info(
+                "euPago webhook: failed payment %s (status=%s)", payment.pk, status
+            )
+        except Exception:
+            logger.exception("euPago webhook: error failing payment %s", payment.pk)
 
     def _refund_payment(self, payment: OrderPayment):
         """

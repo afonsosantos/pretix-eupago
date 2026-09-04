@@ -221,6 +221,57 @@ def test_post_webhook_refund_status_ignored_for_unpaid_payment(client, order):
 
 
 @pytest.mark.django_db
+def test_post_webhook_cancel_status_fails_pending_mbway_payment(client, order):
+    payment = make_confirmable_payment(order, "eupago_mbway")
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps(
+            {
+                "transaction": {
+                    "status": "Cancel",
+                    "identifier": f"{order.code}-{payment.pk}",
+                    "method": "MW:PT",
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+        assert payment.state == OrderPayment.PAYMENT_STATE_FAILED
+        assert payment.info_data["identifier"] == f"{order.code}-{payment.pk}"
+        assert payment.refunds.count() == 0
+
+
+@pytest.mark.django_db
+def test_post_webhook_cancel_status_leaves_confirmed_payment_alone(client, order):
+    payment = make_confirmable_payment(
+        order, "eupago_mbway", state=OrderPayment.PAYMENT_STATE_CONFIRMED
+    )
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps(
+            {
+                "transaction": {
+                    "status": "Expired",
+                    "identifier": f"{order.code}-{payment.pk}",
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+        assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
 def test_post_webhook_requires_signature_when_secret_configured(client, order, event):
     with scopes_disabled():
         event.settings.set("eupago_webhook_secret", WEBHOOK_SECRET)

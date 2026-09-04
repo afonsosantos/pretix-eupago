@@ -112,6 +112,13 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     upgrade from before this existed), it logs a warning and falls back to the identifier cross-check
     only — kept as a fallback rather than a hard requirement so existing installs don't lose webhook
     confirmation entirely until an admin sets the secret.
+  - `post()` handles `status in ("Cancel", "Canceled", "Expired")` via `_fail_payment`, which calls
+    pretix core's `payment.fail()` (state → `PAYMENT_STATE_FAILED`, merging the euPago status into
+    `payment.info_data` rather than overwriting it). This is the MB WAY "customer canceled the push in
+    the app" path (euPago sends a v2.0 `Cancel`), and also covers an expired Multibanco reference.
+    `fail()` only acts on created/pending/canceled payments and is race-safe against a simultaneous
+    confirmation, so a stray `Cancel`/`Expired` arriving after `Paid` is a no-op. No refund is
+    involved — the payment never completed.
   - `post()` also handles `status in ("Refund", "Refunded")` via `_refund_payment`, which calls
     `payment.create_external_refund()` (pretix core's designated API for refunds triggered by an
     external source — the same one the in-tree `stripe` plugin uses) when the payment is currently

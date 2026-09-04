@@ -3,6 +3,6 @@ try:
 except ImportError:
     raise RuntimeError("Please, don't run pip install directly. Use pip install -e .")
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 from .apps import PluginApp  # NOQA isort:skip
