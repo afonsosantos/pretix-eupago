@@ -41,6 +41,7 @@ test = [
 
 [project.urls]
 Homepage = "https://github.com/afonsosantos/pretix-eupago"
+Documentation = "https://docs.afonsosantos.me/eupago/"
 Issues = "https://github.com/afonsosantos/pretix-eupago/issues"
 
 [project.entry-points."pretix.plugin"]

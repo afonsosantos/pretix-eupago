@@ -24,6 +24,9 @@ pretix-eupago
 This is a plugin for `pretix`_ that integrates `euPago`_, a Portuguese payment
 gateway, to accept **Multibanco** references and **MB WAY** push payments.
 
+**Documentation: https://docs.afonsosantos.me/eupago/** — configuration, webhooks, refunds and
+troubleshooting, in English and Portuguese.
+
 * PyPI: https://pypi.org/project/pretix-eupago/
 * Source: https://github.com/afonsosantos/pretix-eupago
 * Issues: https://github.com/afonsosantos/pretix-eupago/issues
@@ -35,61 +38,20 @@ Install the plugin into the same Python environment as your pretix instance::
 
     pip install pretix-eupago
 
-Then restart your pretix server. The plugin registers itself with pretix's plugin registry
-automatically via a setuptools entry point — no changes to ``INSTALLED_APPS`` are needed. You can now
-enable it for an event under the "plugins" tab in that event's settings.
+Restart pretix and enable it for an event under **Settings → Plugins**. Then follow the
+`configuration guide`_ — in particular, payments are only confirmed once euPago's webhook is set up.
 
-Development setup
-------------------
+Development
+-----------
 
-1. Make sure that you have a working `pretix development setup`_.
+With a working `pretix development setup`_ and its virtualenv active::
 
-2. Clone this repository.
+    pip install -e .    # or: uv sync --extra test
+    make                # compile translations
+    make test
+    make lint
 
-3. Activate the virtual environment you use for pretix development.
-
-4. Execute ``pip install -e .`` (or, if you use `uv`_, ``uv sync --extra test``) within this directory
-   to register this application with pretix's plugin registry.
-
-5. Execute ``make`` within this directory to compile translations.
-
-6. Restart your local pretix server. You can now use the plugin from this repository for your events by
-   enabling it in the 'plugins' tab in the settings.
-
-Run ``make test`` to run the test suite and ``make lint`` to run `ruff`_.
-
-Configuration
--------------
-
-Enable the plugin for an event, then configure the shared euPago settings under
-**Settings → Payment → euPago**:
-
-* **API Key** — your euPago API key, found in Backoffice → Channels → Channel Listing.
-* **Sandbox / Test mode** — use the euPago sandbox environment for testing.
-* **Webhook signature secret** — optional but strongly recommended. The encryption key generated for
-  this channel's webhook in Backoffice → Channels → Channel Listing → "Receive notification for a URL".
-  When set, incoming webhook v2.0 (POST) notifications are only accepted if their signature matches;
-  without it, they're accepted based on a weaker cross-check only.
-
-These are shared by every euPago payment method, so you only set them once. Then enable and configure
-each payment method you want individually under Settings → Payment:
-
-* **Multibanco** — has no method-specific settings besides the reference validity:
-
-  * **Multibanco reference validity (days)** — how many days a generated Multibanco reference stays
-    valid.
-
-* **MB WAY** — no method-specific settings.
-
-Finally, configure a single webhook URL in euPago's Backoffice (Channels → Channel Listing → "Receive
-notification for a URL"), for every channel you use::
-
-    https://<your-pretix-domain>/eupago/webhook/
-
-This URL is global (not event-scoped) and handles both euPago webhook formats (v1.0 GET and v2.0 POST).
-v1.0 notifications are verified against your configured API key; v2.0 notifications are verified against
-your configured webhook signature secret, if set. The optional "encrypt" webhook setting in Backoffice
-is also supported (the payload is decrypted using that same secret).
+See the `development guide`_ for more.
 
 License
 -------
@@ -101,5 +63,5 @@ Released under the terms of the Apache License 2.0, see the LICENSE file for det
 .. _pretix: https://github.com/pretix/pretix
 .. _euPago: https://eupago.pt
 .. _pretix development setup: https://docs.pretix.eu/en/latest/development/setup.html
-.. _uv: https://docs.astral.sh/uv/
-.. _ruff: https://docs.astral.sh/ruff/
+.. _configuration guide: https://docs.afonsosantos.me/eupago/configuration/
+.. _development guide: https://docs.afonsosantos.me/development/
