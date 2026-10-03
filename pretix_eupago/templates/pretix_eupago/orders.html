@@ -1,32 +1,39 @@
 {% extends "pretixcontrol/event/base.html" %}
 {% load i18n %}
 {% load money %}
-{% block title %}{% trans "euPago orders" %}{% endblock %}
+{% block title %}{% trans "euPago" %}{% endblock %}
 {% block content %}
-    <h1>{% trans "euPago orders" %}</h1>
+    <h1>{% trans "euPago payments" %}</h1>
 
-    <form class="form-inline filter-form" action="" method="get">
-        <div class="form-group">
-            <label for="id_provider">{% trans "Method" %}</label>
-            <select name="provider" id="id_provider" class="form-control">
-                <option value="">{% trans "All" %}</option>
-                {% for value, label in provider_choices %}
-                    <option value="{{ value }}" {% if request.GET.provider == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="form-group">
-            <label for="id_state">{% trans "Status" %}</label>
-            <select name="state" id="id_state" class="form-control">
-                <option value="">{% trans "All" %}</option>
-                {% for value, label in state_choices %}
-                    <option value="{{ value }}" {% if request.GET.state == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <button type="submit" class="btn btn-default">
-            <span class="fa fa-filter"></span> {% trans "Filter" %}
+    {% comment %}
+        A real submit button, not onchange="this.form.submit()": the Control panel's CSP
+        blocks inline event handlers.
+    {% endcomment %}
+    <form class="form-inline helper-space-below" action="" method="get">
+        <label class="sr-only" for="eupago-query">{% trans "Order code or reference" %}</label>
+        <input type="search" name="query" id="eupago-query" class="form-control"
+               value="{{ query }}" placeholder="{% trans "Order code or reference" %}">
+        <label class="sr-only" for="eupago-provider">{% trans "Method" %}</label>
+        <select name="provider" id="eupago-provider" class="form-control">
+            <option value="">{% trans "All methods" %}</option>
+            {% for value, label in provider_choices %}
+                <option value="{{ value }}" {% if request.GET.provider == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <label class="sr-only" for="eupago-state">{% trans "Status" %}</label>
+        <select name="state" id="eupago-state" class="form-control">
+            <option value="">{% trans "All statuses" %}</option>
+            {% for value, label in state_choices %}
+                <option value="{{ value }}" {% if request.GET.state == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary">
+            <span class="fa fa-filter" aria-hidden="true"></span>
+            {% trans "Filter" %}
         </button>
+        {% if filtered %}
+            <a href="?" class="btn btn-link">{% trans "Clear filters" %}</a>
+        {% endif %}
     </form>
 
     <div class="table-responsive">
@@ -62,21 +69,22 @@
                             {% trans "MB WAY" %}
                         {% endif %}
                     </td>
-                    <td>{{ payment.get_state_display }}</td>
                     <td>
-                        {% if payment.provider == "eupago_multibanco" %}
-                            {% if payment.info_data.entidade %}
-                                {% trans "Entity" %}: {{ payment.info_data.entidade }}<br>
-                                {% trans "Reference" %}: {{ payment.info_data.referencia }}
-                            {% else %}
-                                <span class="text-muted">{% trans "Not generated yet" %}</span>
-                            {% endif %}
+                        {{ payment.get_state_display }}
+                        {% if payment.info_data.eupago_webhook_status %}
+                            <br><span class="text-muted">{{ payment.info_data.eupago_webhook_status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if payment.provider == "eupago_multibanco" and payment.info_data.entidade %}
+                            {% trans "Entity" %}: {{ payment.info_data.entidade }}<br>
+                            {% trans "Reference" %}: {{ payment.info_data.referencia }}
+                        {% elif payment.provider == "eupago_mbway" and payment.info_data.transactionID %}
+                            {% trans "Transaction ID" %}: {{ payment.info_data.transactionID }}
+                        {% elif payment.state == "failed" or payment.state == "canceled" %}
+                            <span class="text-muted">{% trans "None — the request to euPago failed or was canceled" %}</span>
                         {% else %}
-                            {% if payment.info_data.transactionID %}
-                                {% trans "Transaction ID" %}: {{ payment.info_data.transactionID }}
-                            {% else %}
-                                <span class="text-muted">{% trans "Not generated yet" %}</span>
-                            {% endif %}
+                            <span class="text-muted">{% trans "Not generated yet" %}</span>
                         {% endif %}
                     </td>
                     <td class="text-right flip">{{ payment.amount|money:request.event.currency }}</td>
@@ -85,7 +93,11 @@
             {% empty %}
                 <tr>
                     <td colspan="7" class="text-center text-muted">
-                        {% trans "No euPago payments found." %}
+                        {% if filtered %}
+                            {% trans "No payments match these filters." %}
+                        {% else %}
+                            {% trans "No euPago payments found." %}
+                        {% endif %}
                     </td>
                 </tr>
             {% endfor %}

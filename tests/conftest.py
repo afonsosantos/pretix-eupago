@@ -23,6 +23,7 @@ def event(organizer):
             date_from=now(),
             live=True,
             currency="EUR",
+            plugins="pretix_eupago",
         )
 
 

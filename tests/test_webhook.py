@@ -8,7 +8,9 @@ import pytest
 from cryptography.hazmat.primitives import padding as sym_padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from django_scopes import scopes_disabled
-from pretix.base.models import OrderPayment
+from pretix.base.models import Event, OrderPayment
+
+from pretix_eupago import views
 
 from .conftest import make_payment
 
@@ -76,58 +78,123 @@ def test_get_webhook_missing_identifier_is_bad_request(client):
     assert response.status_code == 400
 
 
+def post_signed(client, payload, secret=WEBHOOK_SECRET):
+    body = json.dumps(payload).encode()
+    return client.post(
+        WEBHOOK_URL,
+        data=body,
+        content_type="application/json",
+        HTTP_X_SIGNATURE=sign(body, secret),
+    )
+
+
+@pytest.fixture
+def webhook_secret(event):
+    with scopes_disabled():
+        event.settings.set("eupago_webhook_secret", WEBHOOK_SECRET)
+
+
 @pytest.mark.django_db
-def test_get_webhook_wrong_chave_api_is_rejected(client, order):
+@pytest.mark.parametrize("chave_api", ["wrong-key", "", "chávé-ünicode"])
+def test_get_webhook_bad_chave_api_is_ignored(client, order, chave_api):
     payment = make_confirmable_payment(order, "eupago_multibanco")
 
     response = client.get(
         WEBHOOK_URL,
-        {
-            "identificador": f"{order.code}-{payment.pk}",
-            "chave_api": "wrong-key",
-        },
+        {"identificador": f"{order.code}-{payment.pk}", "chave_api": chave_api},
     )
 
-    assert response.status_code == 400
+    # Same answer as an unknown identifier: the endpoint mustn't reveal which exist.
+    assert response.status_code == 200
     with scopes_disabled():
         payment.refresh_from_db()
     assert payment.state == OrderPayment.PAYMENT_STATE_CREATED
 
 
 @pytest.mark.django_db
-def test_get_webhook_missing_chave_api_is_rejected(client, order):
-    payment = make_confirmable_payment(order, "eupago_multibanco")
-
-    response = client.get(WEBHOOK_URL, {"identificador": f"{order.code}-{payment.pk}"})
-
-    assert response.status_code == 400
-    with scopes_disabled():
-        payment.refresh_from_db()
-    assert payment.state == OrderPayment.PAYMENT_STATE_CREATED
-
-
-@pytest.mark.django_db
-def test_post_webhook_paid_confirms_payment(client, order):
+def test_post_webhook_paid_confirms_payment(client, order, webhook_secret):
     payment = make_confirmable_payment(order, "eupago_mbway")
 
-    response = client.post(
-        WEBHOOK_URL,
-        data=json.dumps(
-            {
-                "transaction": {
-                    "status": "Paid",
-                    "identifier": f"{order.code}-{payment.pk}",
-                    "method": "MW:PT",
-                }
+    response = post_signed(
+        client,
+        {
+            "transaction": {
+                "status": "Paid",
+                "identifier": f"{order.code}-{payment.pk}",
+                "method": "MW:PT",
             }
-        ),
-        content_type="application/json",
+        },
     )
 
     assert response.status_code == 200
     with scopes_disabled():
         payment.refresh_from_db()
     assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["Paid", "Refund"])
+def test_post_webhook_without_secret_refuses_paid_and_refund(client, order, status):
+    # No webhook key: anyone who knows their own order code and payment pk could forge
+    # this, so it must not mark the order paid (or refunded).
+    state = (
+        OrderPayment.PAYMENT_STATE_CONFIRMED
+        if status == "Refund"
+        else OrderPayment.PAYMENT_STATE_PENDING
+    )
+    payment = make_confirmable_payment(order, "eupago_mbway", state=state)
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps(
+            {
+                "transaction": {
+                    "status": status,
+                    "identifier": f"{order.code}-{payment.pk}",
+                }
+            }
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    with scopes_disabled():
+        payment.refresh_from_db()
+        assert payment.refunds.count() == 0
+    assert payment.state == state
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "state",
+    [OrderPayment.PAYMENT_STATE_CANCELED, OrderPayment.PAYMENT_STATE_FAILED],
+)
+def test_post_webhook_paid_confirms_canceled_or_failed_payment(
+    client, order, webhook_secret, state
+):
+    # The customer switched method (pretix canceled this payment) but paid the old
+    # Multibanco reference anyway: the money must still land in pretix.
+    payment = make_confirmable_payment(order, "eupago_multibanco", state=state)
+
+    response = post_signed(
+        client,
+        {"transaction": {"status": "Paid", "identifier": f"{order.code}-{payment.pk}"}},
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "body",
+    ['"data"', "[1]", "123", '{"transaction": "x"}', '{"transaction": null}'],
+)
+def test_post_webhook_malformed_payload_is_bad_request(client, body):
+    response = client.post(WEBHOOK_URL, data=body, content_type="application/json")
+    assert response.status_code == 400
 
 
 @pytest.mark.django_db
@@ -172,26 +239,24 @@ def test_post_webhook_paid_without_identifier_is_bad_request(client):
 
 
 @pytest.mark.django_db
-def test_post_webhook_refund_status_creates_external_refund(client, order):
+def test_post_webhook_refund_status_creates_external_refund_once(
+    client, order, webhook_secret
+):
     payment = make_confirmable_payment(
         order, "eupago_multibanco", state=OrderPayment.PAYMENT_STATE_CONFIRMED
     )
+    payload = {
+        "transaction": {
+            "status": "Refund",
+            "identifier": f"{order.code}-{payment.pk}",
+            "method": "PC:PT",
+        }
+    }
 
-    response = client.post(
-        WEBHOOK_URL,
-        data=json.dumps(
-            {
-                "transaction": {
-                    "status": "Refund",
-                    "identifier": f"{order.code}-{payment.pk}",
-                    "method": "PC:PT",
-                }
-            }
-        ),
-        content_type="application/json",
-    )
+    assert post_signed(client, payload).status_code == 200
+    # euPago's retry of the same notification must not record a second refund.
+    assert post_signed(client, payload).status_code == 200
 
-    assert response.status_code == 200
     with scopes_disabled():
         assert payment.refunds.count() == 1
         refund = payment.refunds.get()
@@ -199,29 +264,32 @@ def test_post_webhook_refund_status_creates_external_refund(client, order):
 
 
 @pytest.mark.django_db
-def test_post_webhook_refund_status_ignored_for_unpaid_payment(client, order):
+def test_post_webhook_refund_before_paid_asks_for_retry(client, order, webhook_secret):
     payment = make_confirmable_payment(order, "eupago_multibanco")
 
-    response = client.post(
-        WEBHOOK_URL,
-        data=json.dumps(
-            {
-                "transaction": {
-                    "status": "Refund",
-                    "identifier": f"{order.code}-{payment.pk}",
-                }
+    response = post_signed(
+        client,
+        {
+            "transaction": {
+                "status": "Refund",
+                "identifier": f"{order.code}-{payment.pk}",
             }
-        ),
-        content_type="application/json",
+        },
     )
 
-    assert response.status_code == 200
+    # Non-200 so euPago retries once the Paid notification has landed.
+    assert response.status_code == 409
     with scopes_disabled():
         assert payment.refunds.count() == 0
 
 
 @pytest.mark.django_db
-def test_post_webhook_cancel_status_fails_pending_mbway_payment(client, order):
+@pytest.mark.parametrize("status", ["Cancel", "Error"])
+def test_post_webhook_cancel_or_error_fails_pending_mbway_payment(
+    client, order, status
+):
+    # No webhook key configured: Cancel/Error still go through, since at worst they fail
+    # a payment the customer can retry.
     payment = make_confirmable_payment(order, "eupago_mbway")
 
     response = client.post(
@@ -229,7 +297,7 @@ def test_post_webhook_cancel_status_fails_pending_mbway_payment(client, order):
         data=json.dumps(
             {
                 "transaction": {
-                    "status": "Cancel",
+                    "status": status,
                     "identifier": f"{order.code}-{payment.pk}",
                     "method": "MW:PT",
                 }
@@ -243,6 +311,7 @@ def test_post_webhook_cancel_status_fails_pending_mbway_payment(client, order):
         payment.refresh_from_db()
         assert payment.state == OrderPayment.PAYMENT_STATE_FAILED
         assert payment.info_data["identifier"] == f"{order.code}-{payment.pk}"
+        assert payment.info_data["eupago_webhook_status"] == status
         assert payment.refunds.count() == 0
 
 
@@ -401,6 +470,85 @@ def test_post_webhook_encrypted_payload_wrong_secret_is_ignored(client, order, e
     with scopes_disabled():
         payment.refresh_from_db()
     assert payment.state == OrderPayment.PAYMENT_STATE_CREATED
+
+
+@pytest.mark.django_db
+def test_post_webhook_encrypted_with_another_events_secret_is_rejected(
+    client, order, event
+):
+    # An admin of some *other* event on this instance sets their own webhook key and
+    # encrypts a Paid notification for this event's payment with it.
+    with scopes_disabled():
+        event.settings.set("eupago_webhook_secret", ENCRYPTION_SECRET)
+        other = Event.objects.create(
+            organizer=event.organizer,
+            name="Other",
+            slug="other",
+            date_from=event.date_from,
+            plugins="pretix_eupago",
+        )
+        other.settings.set("eupago_webhook_secret", "b" * 32)
+    payment = make_confirmable_payment(order, "eupago_mbway")
+    plaintext = json.dumps(
+        {"transaction": {"status": "Paid", "identifier": f"{order.code}-{payment.pk}"}}
+    ).encode()
+    ciphertext_b64, iv_b64 = encrypt(plaintext, secret="b" * 32)
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps({"data": ciphertext_b64}),
+        content_type="application/json",
+        HTTP_X_INITIALIZATION_VECTOR=iv_b64,
+    )
+
+    assert response.status_code == 400
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CREATED
+
+
+@pytest.mark.django_db
+def test_post_webhook_encrypted_skips_wrong_key_that_passes_padding(
+    client, order, event, monkeypatch
+):
+    # A wrong key passes PKCS7 unpadding ~1 time in 256, yielding garbage. That must not
+    # stop the loop before the right key is tried.
+    with scopes_disabled():
+        # Stored first, so (in insertion order) it's the key tried first.
+        other = Event.objects.create(
+            organizer=event.organizer,
+            name="Other",
+            slug="other",
+            date_from=event.date_from,
+        )
+        other.settings.set("eupago_webhook_secret", "b" * 32)
+        event.settings.set("eupago_webhook_secret", ENCRYPTION_SECRET)
+    payment = make_confirmable_payment(order, "eupago_mbway")
+    plaintext = json.dumps(
+        {"transaction": {"status": "Paid", "identifier": f"{order.code}-{payment.pk}"}}
+    ).encode()
+    ciphertext_b64, iv_b64 = encrypt(plaintext)
+
+    real_decrypt = views._aes_cbc_decrypt
+
+    def decrypt(ciphertext, iv, key):
+        if key == b"b" * 32:
+            return b"\x8f\x02garbage that unpadded fine"
+        return real_decrypt(ciphertext, iv, key)
+
+    monkeypatch.setattr(views, "_aes_cbc_decrypt", decrypt)
+
+    response = client.post(
+        WEBHOOK_URL,
+        data=json.dumps({"data": ciphertext_b64}),
+        content_type="application/json",
+        HTTP_X_INITIALIZATION_VECTOR=iv_b64,
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
 
 
 @pytest.mark.django_db

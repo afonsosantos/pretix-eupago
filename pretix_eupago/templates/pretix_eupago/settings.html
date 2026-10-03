@@ -9,12 +9,61 @@
             payment method can still be enabled or disabled individually under Settings → Payment.
         {% endblocktrans %}
     </p>
-    <form action="" method="post" class="form-horizontal" enctype="multipart/form-data">
+    {% if wrong_currency %}
+        <div class="alert alert-danger">
+            {% blocktrans trimmed with currency=request.event.currency %}
+                euPago only accepts payments in euros, but this event's currency is {{ currency }}.
+                Multibanco and MB WAY won't be offered at checkout.
+            {% endblocktrans %}
+        </div>
+    {% endif %}
+    {% if sandbox_on_live_event %}
+        <div class="alert alert-warning">
+            {% blocktrans trimmed %}
+                Sandbox mode is on, but this event is not in test mode. Multibanco and MB WAY
+                won't be offered at checkout until you turn sandbox mode off or put the event
+                in test mode.
+            {% endblocktrans %}
+        </div>
+    {% endif %}
+    <form action="" method="post" class="form-horizontal" enctype="multipart/form-data"
+          autocomplete="off" data-bwignore="true" data-1p-ignore="true" data-lpignore="true">
         {% csrf_token %}
         {% bootstrap_form_errors form %}
-        {% bootstrap_field form.eupago_api_key layout="horizontal" %}
-        {% bootstrap_field form.eupago_sandbox layout="horizontal" %}
-        {% bootstrap_field form.eupago_webhook_secret layout="horizontal" %}
+
+        <fieldset>
+            <legend>{% trans "API access" %}</legend>
+            {% bootstrap_field form.eupago_api_key layout="horizontal" %}
+            {% bootstrap_field form.eupago_sandbox layout="horizontal" %}
+        </fieldset>
+
+        <fieldset>
+            <legend>{% trans "Webhook" %}</legend>
+            {% if missing_webhook_secret %}
+                <div class="alert alert-warning">
+                    {% blocktrans trimmed %}
+                        No webhook key is set. Webhook 2.0 notifications of completed payments
+                        and refunds are refused until you add it, so payments stay pending.
+                    {% endblocktrans %}
+                </div>
+            {% endif %}
+            <div class="form-group">
+                <label class="col-md-3 control-label" for="eupago-webhook-url">{% trans "Webhook URL" %}</label>
+                <div class="col-md-9">
+                    <input type="text" readonly class="form-control" id="eupago-webhook-url"
+                           value="{{ webhook_url }}">
+                    <span class="help-block">
+                        {% blocktrans trimmed %}
+                            Paste this into euPago Backoffice → Channels → Channel Listing →
+                            <em>Receive notification for a URL</em>, and choose webhook 2.0.
+                            Payments are only confirmed in pretix once euPago notifies this URL.
+                        {% endblocktrans %}
+                    </span>
+                </div>
+            </div>
+            {% bootstrap_field form.eupago_webhook_secret layout="horizontal" %}
+        </fieldset>
+
         <div class="form-group submit-group">
             <button type="submit" class="btn btn-primary btn-save">
                 {% trans "Save" %}

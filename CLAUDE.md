@@ -17,7 +17,11 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
   being run outside a pretix environment).
 - `pretix_eupago/apps.py` — `PluginApp` (subclasses `pretix.base.plugins.PluginConfig`, not plain
   Django `AppConfig`) declares the `PretixPluginMeta` (name, category `PAYMENT`, `experimental = False`,
-  `compatibility = "pretix>=4.0.0"`) and hooks up `signals.py` in `ready()`.
+  `compatibility = "pretix>=2024.1.0"`) and hooks up `signals.py` in `ready()`.
+  - Permission checks use pretix's legacy names (`can_change_event_settings`, `can_view_orders`),
+    same as the sibling `pretix-pt-invoicing` plugin: current pretix maps them onto its pluggable
+    permissions (`pretix/helpers/permission_migration.py`), while the new-style names
+    (`event.orders:read`, …) don't exist on older pretix at all.
   - **This file must stay a real submodule** (`pretix_eupago/apps.py`), not be inlined into
     `__init__.py`. pretix's plugin loader (`pretix/settings.py`) reads only the *module* portion of the
     `pretix.plugin` entry point (`pretix_eupago:PluginApp` → module `pretix_eupago`) and appends that
@@ -39,12 +43,18 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     only reject re-entry once the state has moved *away* from `created`, would let a customer who
     revisits their payment link retrigger `execute_payment` and generate a second reference). Payment
     stays pending until the webhook confirms it.
-  - `EupagoMBWAY` — checkout form collects a phone number (also has a `payment_prepare` path for the
-    "retry payment" flow on the order page); `execute_payment` normalizes the phone to euPago's
-    `351#XXXXXXXXX` format, calls `mbway/create`, and likewise sets `payment.state =
-    PAYMENT_STATE_PENDING` for the same re-entry reason as Multibanco — for MB WAY this specifically
-    guards against a revisit sending a duplicate push notification to the customer's phone. Also pending
-    until webhook confirmation.
+    The reference's `data_fim` is today + `multibanco_expiry_days`, capped at the order's own
+    `expires` date, so a reference can't be paid after the order expired and its quota was resold.
+  - `EupagoMBWAY` — checkout form collects a phone number, validated by `validate_phone` /
+    `normalize_phone` (Portuguese mobile only: 9 digits starting with 9, any spacing/punctuation, an
+    optional `+351`/`00351`/`351` prefix; a foreign number is rejected rather than sent with the
+    hard-coded `countryCode: "+351"`). Also has a `payment_prepare` path for the "retry payment" flow
+    on the order page. `execute_payment` calls `mbway/create` and requires `"transactionStatus":
+    "Success"` plus a `transactionID` in the response — euPago refuses e.g. an unregistered number with
+    a JSON error body, deliberately not caught by `raise_for_status()` so the customer is told to
+    check the number. It then sets `payment.state = PAYMENT_STATE_PENDING` for the same re-entry reason
+    as Multibanco — for MB WAY this specifically guards against a revisit sending a duplicate push
+    notification to the customer's phone. Also pending until webhook confirmation.
   - Both providers implement `payment_pending_render` / `payment_control_render` (per-provider
     templates), `api_payment_details`, `matching_id`, and `shred_payment_info` (MB WAY redacts the
     phone number; Multibanco has nothing to shred).
@@ -52,36 +62,45 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     handled manually/out-of-band in euPago's Backoffice. Refunds triggered that way *are* reflected back
     into pretix, though: see `EupagoWebhookView._refund_payment` below.
 - `EupagoSettingsMixin` (top of `payment.py`) holds only what's genuinely shared: `_api_key`,
-  `_is_sandbox`, `_env()`, `test_mode_message`, and `settings_content_render` (a link back to the
+  `_is_sandbox`, `_env()`, `test_mode_message`, `is_allowed` (refuses a non-EUR event, and sandbox
+  mode on an event that isn't in test mode — sandbox payments are fake, so offering them on a live
+  shop would confirm real orders for free), and `settings_content_render` (a link back to the
   shared settings page, shown on each provider's own settings screen so admins don't go looking for a
   field that isn't there anymore). It deliberately does **not** override `settings_form_fields` — see
   below for why the API key/sandbox fields live elsewhere.
 - `pretix_eupago/views.py` also defines `EupagoSettingsForm` (a `pretix.base.forms.SettingsForm`) and
   `EupagoSettings` (`EventSettingsViewMixin` + `EventSettingsFormView`) — a single Control-panel page,
   shared across both payment methods, holding `eupago_api_key`, `eupago_sandbox`, and
-  `eupago_webhook_secret` (optional; see webhook section below). These are read directly off
+  `eupago_webhook_secret` (required for webhook v2.0 Paid/Refund; see webhook section below). The two
+  keys are `SecretKeySettingsField`s (never rendered back into the page), and `_no_autofill` keeps
+  password managers out of them. These are read directly off
   `event.settings` (not a provider's `SettingsSandbox`) by `EupagoSettingsMixin`, since
   `SettingsSandbox` always prefixes keys per-provider (`payment_<identifier>_...`) and there is no
   built-in way to share one field across providers other than storing it unprefixed on `event.settings`
-  and having each provider read it directly. `permission = "event.settings.payment:write"`.
+  and having each provider read it directly. `permission = "can_change_event_settings"`.
   - `pretix_eupago/urls.py` registers this at a literal `control/event/<organizer>/<event>/eupago/settings`
     path (not `event_patterns` — those are for the presale/frontend side; Control-panel plugin pages use
     a plain `urlpatterns` entry with the full path spelled out, following the same pattern as pretix's
-    own `returnurl`/`badges` plugins) and `apps.py`'s `PretixPluginMeta.settings_links` points the event
-    settings nav at it (`plugins:pretix_eupago:settings`).
+    own `returnurl`/`badges` plugins). `signals.py`'s `nav_event_settings` receiver puts it in the
+    event's Settings sidebar as "euPago" (same pattern as `pretix-pt-invoicing`); `apps.py`'s
+    `PretixPluginMeta.settings_links` also links it from the Plugins page.
+  - `PluginEnabledMixin` (also on the orders page) 404s when the plugin isn't enabled for the event —
+    pretix only enforces that for `event_patterns`, not for these plain `urlpatterns`.
   - `pretix_eupago/templates/pretix_eupago/settings.html` extends
-    `pretixcontrol/event/settings_base.html`, the standard shell for this kind of page.
+    `pretixcontrol/event/settings_base.html`, groups fields in `<fieldset>`s ("API access",
+    "Webhook") like `pretix-pt-invoicing`'s settings page, shows the webhook URL to paste into euPago's
+    Backoffice, and warns about a missing webhook key, sandbox on a live event, or a non-EUR currency.
 - `pretix_eupago/views.py` also defines `EupagoOrdersView` (`EventPermissionRequiredMixin` +
-  `ListView`, `permission = "event.orders:read"`), a Control-panel page listing every
+  `ListView`, `permission = "can_view_orders"`), a Control-panel page listing every
   `OrderPayment` for the event with `provider` in `eupago_multibanco`/`eupago_mbway`, alongside the
   method-specific data read straight from `payment.info_data` (Multibanco entidade/referencia, MB
   WAY transactionID) — the same data the webhook handler and order detail page use. Filterable by
-  provider/state via GET params, paginated.
+  provider/state and searchable by order code or reference/transaction ID (`query`, matched against
+  `payment.info` with spaces dropped) via GET params, paginated.
   - `pretix_eupago/urls.py` registers it at `control/event/<organizer>/<event>/eupago/orders`
     (same non-`event_patterns` pattern as the settings page above).
-  - `pretix_eupago/signals.py` adds a `nav_event` receiver (not `settings_links`, since this is a
-    full page, not a settings form) to put "euPago orders" in the event's Control-panel sidebar,
-    following the same pattern as pretix's own `banktransfer` plugin's `nav_event` receiver.
+  - `pretix_eupago/signals.py` adds a `nav_event` receiver to put "euPago" in the event's main
+    Control-panel sidebar; both nav receivers share `_nav_entry`, mirroring `pretix-pt-invoicing`.
   - `pretix_eupago/templates/pretix_eupago/orders.html` extends `pretixcontrol/event/base.html`
     (the plain-page shell, as opposed to `settings_base.html` used by the settings page) and reuses
     `pretixcontrol/pagination.html` for paging.
@@ -104,18 +123,28 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     v1.0 notification. That key is a secret only the event admin and euPago know (customers never see
     it), so `get()` requires it to `hmac.compare_digest`-match the event's configured `eupago_api_key`
     before calling `_confirm_payment`. This check is mandatory — there's no opt-out, since `chave_api` is
-    always present in genuine v1.0 traffic.
+    always present in genuine v1.0 traffic. A mismatch gets the same `200 OK` as an unknown
+    identifier, so the endpoint doesn't reveal which identifiers exist.
   - **v2.0 (`post`)**: euPago signs the raw POST body with HMAC-SHA256 in an `X-Signature` header
     (base64-encoded digest), keyed with a secret generated per-channel in Backoffice. If the event has
-    that secret configured (`eupago_webhook_secret`, optional), `post()` verifies the signature via
-    `_verify_hmac()` before acting and rejects on mismatch. If the secret is *not* configured (e.g. an
-    upgrade from before this existed), it logs a warning and falls back to the identifier cross-check
-    only — kept as a fallback rather than a hard requirement so existing installs don't lose webhook
-    confirmation entirely until an admin sets the secret.
-  - `post()` handles `status in ("Cancel", "Canceled", "Expired")` via `_fail_payment`, which calls
-    pretix core's `payment.fail()` (state → `PAYMENT_STATE_FAILED`, merging the euPago status into
+    that secret configured (`eupago_webhook_secret`), `post()` verifies the signature via
+    `_verify_hmac()` before acting and rejects on mismatch. If the secret is *not* configured,
+    `Paid`/`Refund` are refused with a 400 — the identifier cross-check alone would let a customer
+    mark their own order paid. Only `Cancel`/`Expired`/`Error` still fall back to the cross-check,
+    since at worst they fail a payment the customer can retry. The settings page warns while the key
+    is missing; v1.0 (authenticated by `chave_api`) keeps working without it.
+  - Any body that isn't a JSON object, or whose `transaction` isn't an object, is a 400.
+  - `_confirm_payment` acts on created/pending/**canceled/failed** payments (like pretix's own
+    `stripe` webhook): pretix cancels a pending Multibanco payment when the customer switches method,
+    but the reference stays payable at euPago, and money paid into it must still land in pretix. A
+    `LockTimeoutException` returns 503 so euPago retries; `Quota.QuotaExceededException` (order expired
+    and resold) is logged at error level for an admin. Any other exception is left to 500 so euPago
+    retries, rather than a 200 silently dropping a payment.
+  - `post()` handles `status in ("Cancel", "Canceled", "Expired", "Error")` via `_fail_payment`, which
+    calls pretix core's `payment.fail()` (state → `PAYMENT_STATE_FAILED`, merging the euPago status into
     `payment.info_data` rather than overwriting it). This is the MB WAY "customer canceled the push in
-    the app" path (euPago sends a v2.0 `Cancel`), and also covers an expired Multibanco reference.
+    the app" path (euPago sends a v2.0 `Cancel`), a push that errored (`Error`, which would otherwise
+    leave the payment pending forever), and also covers an expired Multibanco reference.
     `fail()` only acts on created/pending/canceled payments and is race-safe against a simultaneous
     confirmation, so a stray `Cancel`/`Expired` arriving after `Paid` is a no-op. No refund is
     involved — the payment never completed.
@@ -124,16 +153,21 @@ at runtime via a setuptools entry point, the mechanism pretix uses for all exter
     external source — the same one the in-tree `stripe` plugin uses) when the payment is currently
     confirmed and has no refund recorded yet. euPago's payload carries no per-refund id/amount, so this
     always treats it as a full refund and is a no-op if a refund already exists (webhook retries, or a
-    second notification, don't double-refund).
+    second notification, don't double-refund). The check-and-create runs under `select_for_update` so
+    two concurrent retries can't both record one. A refund for a payment still created/pending (its
+    `Paid` hasn't arrived yet) returns 409 so euPago retries it later instead of it being dropped.
   - **v2.0 encrypted mode**: euPago's Backoffice has an optional per-channel "encrypt" toggle for
     webhooks; when enabled, the POST body is `{"data": "<base64 AES-256-CBC ciphertext>", ...}` (no
     plaintext `transaction`) with the IV in an `X-Initialization-Vector` header, keyed with the same
     per-channel secret as `X-Signature`. `post()` detects this (`"data" in data and "transaction" not
     in data`) and calls `_decrypt_payload()`, which — since this is one global endpoint shared by every
     event and there's no way to know which event a request belongs to before decrypting it — tries every
-    event's configured `eupago_webhook_secret` in turn via `_aes_cbc_decrypt()` until one produces
-    correctly-PKCS7-padded plaintext. A successful decrypt is itself strong proof of authenticity (wrong
-    keys reliably fail PKCS7 unpadding), so the normal `X-Signature` check is skipped for this path. This
+    event's configured `eupago_webhook_secret` in turn via `_aes_cbc_decrypt()`. A wrong key still
+    passes PKCS7 unpadding about 1 time in 256, so a key only counts once its plaintext also parses as
+    a JSON object with a `transaction` object; otherwise the loop moves on to the next key. It returns
+    the payload *and* the secret that decrypted it, and `post()` then requires that secret to be the
+    payment's own event's — otherwise an admin of any event on the instance could set their own key
+    and confirm payments in every other event. The `X-Signature` check is skipped for this path. This
     requires the `cryptography` package, declared as a direct dependency (not just relied on transitively
     via pretix) since the plugin imports it directly.
   - The whole view is decorated with `@method_decorator(scopes_disabled(), name="dispatch")`

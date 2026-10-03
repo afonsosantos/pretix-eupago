@@ -26,8 +26,51 @@ def test_get_settings_page(logged_in_client, event):
         SETTINGS_URL.format(event.organizer.slug, event.slug)
     )
     assert response.status_code == 200
-    assert b"API Key" in response.content
-    assert b"Webhook signature secret" in response.content
+    content = response.content.decode()
+    assert "API key" in content
+    assert "Webhook key" in content
+    # The URL to paste into euPago's Backoffice is shown, not buried in a code comment.
+    assert "/eupago/webhook/" in content
+    # No webhook key yet: warned about, since Paid notifications are refused without it.
+    assert "No webhook key is set" in content
+
+
+@pytest.mark.django_db
+def test_settings_page_is_in_settings_sidebar(logged_in_client, event):
+    response = logged_in_client.get(
+        f"/control/event/{event.organizer.slug}/{event.slug}/settings/"
+    )
+    assert response.status_code == 200
+    assert SETTINGS_URL.format(event.organizer.slug, event.slug) in (
+        response.content.decode()
+    )
+
+
+@pytest.mark.django_db
+def test_settings_page_masks_secrets(logged_in_client, event):
+    with scopes_disabled():
+        event.settings.set("eupago_api_key", "super-secret-api-key")
+        event.settings.set("eupago_webhook_secret", "super-secret-webhook-key")
+
+    response = logged_in_client.get(
+        SETTINGS_URL.format(event.organizer.slug, event.slug)
+    )
+
+    assert b"super-secret-api-key" not in response.content
+    assert b"super-secret-webhook-key" not in response.content
+    assert b"No webhook key is set" not in response.content
+
+
+@pytest.mark.django_db
+def test_settings_page_404s_when_plugin_disabled(logged_in_client, event):
+    with scopes_disabled():
+        event.plugins = ""
+        event.save()
+
+    response = logged_in_client.get(
+        SETTINGS_URL.format(event.organizer.slug, event.slug)
+    )
+    assert response.status_code == 404
 
 
 @pytest.mark.django_db

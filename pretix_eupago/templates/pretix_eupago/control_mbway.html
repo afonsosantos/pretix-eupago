@@ -1,9 +1,11 @@
 {% load i18n %}
 <div class="eupago-control eupago-mbway">
-    {% if info.transactionID %}
+    {% if info.transactionID or info.phone or info.eupago_webhook_status %}
     <dl class="dl-horizontal">
+        {% if info.transactionID %}
         <dt>{% trans "Transaction ID" %}</dt>
         <dd>{{ info.transactionID }}</dd>
+        {% endif %}
         {% if info.phone %}
         <dt>{% trans "Phone" %}</dt>
         <dd>{{ info.phone }}</dd>
@@ -11,6 +13,10 @@
         {% if info.identifier %}
         <dt>{% trans "Identifier" %}</dt>
         <dd>{{ info.identifier }}</dd>
+        {% endif %}
+        {% if info.eupago_webhook_status %}
+        <dt>{% trans "euPago status" %}</dt>
+        <dd>{{ info.eupago_webhook_status }}</dd>
         {% endif %}
     </dl>
     {% else %}

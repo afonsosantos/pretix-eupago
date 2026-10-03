@@ -3,30 +3,31 @@
 <div class="eupago-pending eupago-multibanco">
     {% if info.referencia %}
     <table class="table">
+        <caption class="sr-only">{% trans "Multibanco payment details" %}</caption>
         <tbody>
             <tr>
-                <th>{% trans "Entity" %}</th>
-                <td><strong>{{ info.entidade }}</strong></td>
+                <th scope="row">{% trans "Entity" %}</th>
+                <td><strong style="font-family: monospace">{{ info.entidade }}</strong></td>
             </tr>
             <tr>
-                <th>{% trans "Reference" %}</th>
-                <td><strong>{{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}</strong></td>
+                <th scope="row">{% trans "Reference" %}</th>
+                <td><strong style="font-family: monospace">{{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}</strong></td>
             </tr>
             <tr>
-                <th>{% trans "Amount" %}</th>
+                <th scope="row">{% trans "Amount" %}</th>
                 <td><strong>{{ payment.amount|money:payment.order.event.currency }}</strong></td>
             </tr>
-            {% if info.expiry %}
+            {% if expiry %}
             <tr>
-                <th>{% trans "Valid until" %}</th>
-                <td>{{ info.expiry }}</td>
+                <th scope="row">{% trans "Pay by" %}</th>
+                <td>{{ expiry|date:"SHORT_DATE_FORMAT" }}</td>
             </tr>
             {% endif %}
         </tbody>
     </table>
-    <p class="text-muted">
+    <p>
         {% blocktrans trimmed %}
-            Pay at any ATM (Caixa Automático) or through your bank's online portal (homebanking).
+            Pay at any Multibanco ATM or through your bank's online portal (homebanking).
             Your order will be confirmed automatically once the payment is received.
         {% endblocktrans %}
     </p>

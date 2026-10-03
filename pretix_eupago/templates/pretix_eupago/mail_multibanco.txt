@@ -5,6 +5,11 @@
 {% trans "Entity" %}: {{ info.entidade }}
 {% trans "Reference" %}: {{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}
 {% trans "Amount" %}: {{ payment.amount|money:payment.order.event.currency }}
-{% if info.expiry %}{% trans "Valid until" %}: {{ info.expiry }}{% endif %}
+{% if expiry %}{% trans "Pay by" %}: {{ expiry|date:"SHORT_DATE_FORMAT" }}{% endif %}
 
-{% blocktrans trimmed %}Pay at any ATM or through your bank's online portal (homebanking). Your order will be confirmed automatically once the payment is received.{% endblocktrans %}
+{% blocktrans trimmed %}
+    Pay at any Multibanco ATM or through your bank's online portal (homebanking).
+    Your order will be confirmed automatically once the payment is received.
+{% endblocktrans %}
+{% if order_url %}
+{% blocktrans trimmed with url=order_url %}You can also find these details on your order page: {{ url }}{% endblocktrans %}{% endif %}

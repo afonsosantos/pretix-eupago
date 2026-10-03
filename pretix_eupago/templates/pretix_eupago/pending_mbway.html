@@ -7,16 +7,22 @@
         {% endblocktrans %}
     </p>
     {% if info.phone %}
-    <p class="text-muted">
+    <p>
         {% blocktrans trimmed with phone=info.phone %}
             Sent to: {{ phone }}
         {% endblocktrans %}
     </p>
     {% endif %}
-    <p class="text-muted">
+    <p>
         {% blocktrans trimmed %}
-            Your order will be confirmed automatically once the payment is approved.
-            If the request expires, you can retry the payment from your order page.
+            After approving in the app, refresh this page to see your order confirmed.
+        {% endblocktrans %}
+    </p>
+    <p>
+        {% blocktrans trimmed %}
+            Didn't get the notification, or did it expire? Check that the MB WAY app is
+            installed and linked to this number. Once the request expires, this page lets
+            you pay again or choose another payment method.
         {% endblocktrans %}
     </p>
 </div>

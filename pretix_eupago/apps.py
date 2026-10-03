@@ -19,7 +19,7 @@ class PluginApp(PluginConfig):
         experimental = False
         version = __version__
         category = "PAYMENT"
-        compatibility = "pretix>=4.0.0"
+        compatibility = "pretix>=2024.1.0"
         settings_links: ClassVar = [
             ((_("Payment"), _("euPago")), "plugins:pretix_eupago:settings", {}),
         ]

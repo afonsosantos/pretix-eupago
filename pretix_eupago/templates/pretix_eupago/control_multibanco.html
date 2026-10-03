@@ -9,13 +9,17 @@
         <dd>{{ info.referencia }}</dd>
         <dt>{% trans "Amount" %}</dt>
         <dd>{{ payment.amount|money:payment.order.event.currency }}</dd>
-        {% if info.expiry %}
-        <dt>{% trans "Valid until" %}</dt>
-        <dd>{{ info.expiry }}</dd>
+        {% if expiry %}
+        <dt>{% trans "Pay by" %}</dt>
+        <dd>{{ expiry|date:"SHORT_DATE_FORMAT" }}</dd>
         {% endif %}
         {% if info.identifier %}
         <dt>{% trans "Identifier" %}</dt>
         <dd>{{ info.identifier }}</dd>
+        {% endif %}
+        {% if info.eupago_webhook_status %}
+        <dt>{% trans "euPago status" %}</dt>
+        <dd>{{ info.eupago_webhook_status }}</dd>
         {% endif %}
     </dl>
     {% else %}

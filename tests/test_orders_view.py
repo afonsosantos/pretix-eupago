@@ -72,6 +72,46 @@ def test_orders_page_filters_by_provider(logged_in_client, event, order):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("query", ["123 456 789", "123456789"])
+def test_orders_page_searches_by_reference(logged_in_client, event, order, query):
+    make_payment(
+        order,
+        "eupago_multibanco",
+        info=json.dumps({"referencia": "123456789", "entidade": "12345"}),
+    )
+    make_payment(
+        order,
+        "eupago_multibanco",
+        info=json.dumps({"referencia": "999999999", "entidade": "12345"}),
+    )
+
+    response = logged_in_client.get(
+        ORDERS_URL.format(event.organizer.slug, event.slug), {"query": query}
+    )
+
+    assert response.status_code == 200
+    assert b"123456789" in response.content
+    assert b"999999999" not in response.content
+
+
+@pytest.mark.django_db
+def test_orders_page_filters_by_state_and_says_when_nothing_matches(
+    logged_in_client, event, order
+):
+    make_payment(order, "eupago_mbway", state=OrderPayment.PAYMENT_STATE_PENDING)
+
+    response = logged_in_client.get(
+        ORDERS_URL.format(event.organizer.slug, event.slug),
+        {"state": OrderPayment.PAYMENT_STATE_CONFIRMED},
+    )
+
+    assert response.status_code == 200
+    assert list(response.context["payments"]) == []
+    assert b"No payments match these filters." in response.content
+    assert b"Clear filters" in response.content
+
+
+@pytest.mark.django_db
 def test_orders_page_requires_permission(client, event):
     with scopes_disabled():
         User.objects.create_user("noaccess@example.org", "dummy")

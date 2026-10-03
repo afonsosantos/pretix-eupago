@@ -6,9 +6,11 @@
             that you can use to pay at any ATM or through your bank's online portal.
         {% endblocktrans %}
     </p>
-    <p class="text-muted">
-        {% blocktrans trimmed %}
-            The reference will be valid for a limited time. Please complete your payment before it expires.
+    <p>
+        {% blocktrans trimmed count days=days %}
+            The reference will be valid for {{ days }} day, or until your order's payment deadline if that comes first.
+        {% plural %}
+            The reference will be valid for {{ days }} days, or until your order's payment deadline if that comes first.
         {% endblocktrans %}
     </p>
 </div>
