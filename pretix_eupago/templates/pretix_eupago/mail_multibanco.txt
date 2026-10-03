@@ -2,11 +2,12 @@
 {% load money %}
 {% blocktrans trimmed %}To complete your payment, use the following Multibanco details:{% endblocktrans %}
 
-{% trans "Entity" %}: {{ info.entidade }}
-{% trans "Reference" %}: {{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}
-{% trans "Amount" %}: {{ payment.amount|money:payment.order.event.currency }}
-{% if expiry %}{% trans "Pay by" %}: {{ expiry|date:"SHORT_DATE_FORMAT" }}{% endif %}
-
+{% comment %}pretix renders e-mails as Markdown, which joins plain consecutive lines into one paragraph — a list keeps one detail per line.{% endcomment %}
+- **{% trans "Entity" %}:** {{ info.entidade }}
+- **{% trans "Reference" %}:** {{ info.referencia|slice:":3" }} {{ info.referencia|slice:"3:6" }} {{ info.referencia|slice:"6:" }}
+- **{% trans "Amount" %}:** {{ payment.amount|money:payment.order.event.currency }}
+{% if expiry %}- **{% trans "Pay by" %}:** {{ expiry|date:"SHORT_DATE_FORMAT" }}
+{% endif %}
 {% blocktrans trimmed %}
     Pay at any Multibanco ATM or through your bank's online portal (homebanking).
     Your order will be confirmed automatically once the payment is received.
