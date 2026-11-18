@@ -1,4 +1,4 @@
-from django.urls import path, re_path
+from django.urls import re_path
 
 from .views import EupagoOrdersView, EupagoSettings, EupagoWebhookView
 
@@ -9,7 +9,12 @@ from .views import EupagoOrdersView, EupagoSettings, EupagoWebhookView
 #   https://<domain>/control/event/<organizer>/<event>/eupago/settings
 #   https://<domain>/control/event/<organizer>/<event>/eupago/orders
 urlpatterns = [
-    path("eupago/webhook/", EupagoWebhookView.as_view(), name="eupago-webhook"),
+    # The trailing slash is optional: euPago's POSTs are not redirected by Django's
+    # APPEND_SLASH, so a webhook URL saved in the Backoffice without it would 404 forever.
+    re_path(r"^eupago/webhook/$", EupagoWebhookView.as_view(), name="eupago-webhook"),
+    # Unnamed alias without the slash, so reverse() (used by the settings page) keeps
+    # producing the canonical URL with it.
+    re_path(r"^eupago/webhook$", EupagoWebhookView.as_view()),
     re_path(
         r"^control/event/(?P<organizer>[^/]+)/(?P<event>[^/]+)/eupago/settings$",
         EupagoSettings.as_view(),

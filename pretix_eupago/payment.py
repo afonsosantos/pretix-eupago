@@ -184,6 +184,23 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
         ).isoformat()
         identifier = f"{payment.order.code}-{payment.pk}"
 
+        # A double tap or a client timeout re-submits the confirm step after the first
+        # request already created a reference at euPago. Creating another one would leave
+        # the customer with two payable references (and two emails) while pretix only
+        # knows the last, so an existing, still-valid reference is reused as is.
+        existing = payment.info_data or {}
+        if (
+            payment.state == OrderPayment.PAYMENT_STATE_PENDING
+            and existing.get("identifier") == identifier
+            and existing.get("referencia")
+            and existing.get("entidade")
+            and existing.get("expiry", "") >= today.isoformat()
+        ):
+            logger.info(
+                "euPago Multibanco: reusing reference for payment %s", payment.pk
+            )
+            return
+
         payload = {
             "chave": self._api_key,
             "valor": float(payment.amount),

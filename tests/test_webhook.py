@@ -73,6 +73,33 @@ def test_get_webhook_confirms_pending_payment(client, order):
 
 
 @pytest.mark.django_db
+def test_webhook_url_without_trailing_slash_is_served(client, order, webhook_secret):
+    """euPago POSTs aren't redirected by APPEND_SLASH; a URL saved without the slash
+    used to 404 forever."""
+    payment = make_confirmable_payment(order, "eupago_multibanco")
+    payload = {
+        "transaction": {
+            "status": "Paid",
+            "identifier": f"{order.code}-{payment.pk}",
+            "method": "PC:PT",
+        }
+    }
+    body = json.dumps(payload).encode()
+
+    response = client.post(
+        "/eupago/webhook",
+        data=body,
+        content_type="application/json",
+        HTTP_X_SIGNATURE=sign(body),
+    )
+
+    assert response.status_code == 200
+    with scopes_disabled():
+        payment.refresh_from_db()
+    assert payment.state == OrderPayment.PAYMENT_STATE_CONFIRMED
+
+
+@pytest.mark.django_db
 def test_get_webhook_missing_identifier_is_bad_request(client):
     response = client.get(WEBHOOK_URL)
     assert response.status_code == 400

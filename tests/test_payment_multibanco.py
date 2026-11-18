@@ -244,3 +244,42 @@ def test_shred_payment_info_is_noop(provider, order):
     provider.shred_payment_info(payment)
 
     assert json.loads(payment.info) == {"referencia": "123456789", "entidade": "12345"}
+
+
+@pytest.mark.django_db
+@responses.activate
+def test_execute_payment_twice_reuses_reference(provider, order):
+    """A double tap / client timeout must not create a second payable reference."""
+    payment = make_payment(order, provider.identifier)
+    responses.add(responses.POST, MULTIBANCO_URL["sandbox"], json=SUCCESS, status=200)
+
+    provider.execute_payment(RequestFactory().post("/"), payment)
+    first_info = payment.info
+    provider.execute_payment(RequestFactory().post("/"), payment)
+
+    assert len(responses.calls) == 1
+    assert payment.info == first_info
+    assert payment.state == OrderPayment.PAYMENT_STATE_PENDING
+    assert len(mail.outbox) == 1
+
+
+@pytest.mark.django_db
+@responses.activate
+def test_execute_payment_creates_new_reference_when_previous_expired(provider, order):
+    old = {
+        "referencia": "111111111",
+        "entidade": "12345",
+        "identifier": "placeholder",
+        "expiry": (timezone.now().date() - timedelta(days=1)).isoformat(),
+    }
+    payment = make_payment(order, provider.identifier, info=json.dumps(old))
+    old["identifier"] = f"{order.code}-{payment.pk}"
+    payment.info = json.dumps(old)
+    payment.state = OrderPayment.PAYMENT_STATE_PENDING
+    payment.save(update_fields=["info", "state"])
+    responses.add(responses.POST, MULTIBANCO_URL["sandbox"], json=SUCCESS, status=200)
+
+    provider.execute_payment(RequestFactory().post("/"), payment)
+
+    assert len(responses.calls) == 1
+    assert json.loads(payment.info)["referencia"] == "123456789"
