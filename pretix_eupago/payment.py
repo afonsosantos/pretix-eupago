@@ -7,6 +7,7 @@ from datetime import date, timedelta
 import requests
 from django import forms
 from django.core.exceptions import ValidationError
+from django.db import transaction as db_transaction
 from django.http import HttpRequest
 from django.template.loader import get_template
 from django.urls import reverse
@@ -14,11 +15,17 @@ from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.timezone import now
 from django.utils.translation import gettext_lazy as _
+from django_scopes import scopes_disabled
 from pretix.base.models import OrderPayment
 from pretix.base.payment import BasePaymentProvider, PaymentException
 from pretix.multidomain.urlreverse import eventreverse_absolute
 
 logger = logging.getLogger(__name__)
+
+# (connect, read) seconds. euPago's API occasionally takes ~15s to answer; the read timeout
+# stays well under the web worker's own timeout (pretix's gunicorn, 30s by default — raise
+# it to at least 90s with GUNICORN_CMD_ARGS="--timeout 90" when using this plugin).
+API_TIMEOUT = (10, 45)
 
 MULTIBANCO_URL = {
     "production": "https://clientes.eupago.pt/clientes/rest_api/multibanco/create",
@@ -188,19 +195,34 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
         # request already created a reference at euPago. Creating another one would leave
         # the customer with two payable references (and two emails) while pretix only
         # knows the last, so an existing, still-valid reference is reused as is.
-        existing = payment.info_data or {}
-        if (
-            payment.state == OrderPayment.PAYMENT_STATE_PENDING
-            and existing.get("identifier") == identifier
-            and existing.get("referencia")
-            and existing.get("entidade")
-            and existing.get("expiry", "") >= today.isoformat()
-        ):
-            logger.info(
-                "euPago Multibanco: reusing reference for payment %s", payment.pk
-            )
-            return
+        #
+        # euPago's create call can take ~15s, long enough for the customer's browser to
+        # give up and the confirm step to be submitted again while the first request is
+        # still waiting for euPago. The row lock makes that second request wait for the
+        # first one, so it finds the finished reference instead of creating another.
+        with db_transaction.atomic():
+            with scopes_disabled():
+                OrderPayment.objects.select_for_update().filter(pk=payment.pk).first()
+                payment.refresh_from_db(fields=["info", "state"])
+            existing = payment.info_data or {}
+            if (
+                payment.state == OrderPayment.PAYMENT_STATE_PENDING
+                and existing.get("identifier") == identifier
+                and existing.get("referencia")
+                and existing.get("entidade")
+                and existing.get("expiry", "") >= today.isoformat()
+            ):
+                logger.info(
+                    "euPago Multibanco: reusing reference for payment %s", payment.pk
+                )
+                return
+            self._create_reference(payment, identifier, expiry)
 
+        # Outside the transaction, so the mail task never runs before the reference is
+        # committed.
+        self._send_reference_email(payment)
+
+    def _create_reference(self, payment, identifier, expiry):
         payload = {
             "chave": self._api_key,
             "valor": float(payment.amount),
@@ -213,7 +235,7 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
             resp = requests.post(
                 MULTIBANCO_URL[self._env()],
                 json=payload,
-                timeout=30,
+                timeout=API_TIMEOUT,
                 headers={"ApiKey": self._api_key},
             )
             resp.raise_for_status()
@@ -253,6 +275,7 @@ class EupagoMultibanco(EupagoSettingsMixin, BasePaymentProvider):
         payment.save(update_fields=["info", "state"])
         # Payment is pending — confirmed via webhook when customer pays.
 
+    def _send_reference_email(self, payment):
         # The "order placed" email is sent by pretix core before execute_payment runs
         # (it can't know the reference yet), so {payment_info} is empty there. Send the
         # reference separately once we actually have it.
@@ -406,7 +429,7 @@ class EupagoMBWAY(EupagoSettingsMixin, BasePaymentProvider):
             resp = requests.post(
                 MBWAY_URL[self._env()],
                 json=payload,
-                timeout=30,
+                timeout=API_TIMEOUT,
                 headers={"Authorization": f"ApiKey {self._api_key}"},
             )
             data = resp.json()

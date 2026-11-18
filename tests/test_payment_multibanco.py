@@ -10,7 +10,7 @@ from django_scopes import scopes_disabled
 from pretix.base.models import OrderPayment
 from pretix.base.payment import PaymentException
 
-from pretix_eupago.payment import MULTIBANCO_URL, EupagoMultibanco
+from pretix_eupago.payment import API_TIMEOUT, MULTIBANCO_URL, EupagoMultibanco
 
 from .conftest import make_payment
 
@@ -261,6 +261,19 @@ def test_execute_payment_twice_reuses_reference(provider, order):
     assert payment.info == first_info
     assert payment.state == OrderPayment.PAYMENT_STATE_PENDING
     assert len(mail.outbox) == 1
+
+
+@pytest.mark.django_db
+@responses.activate
+def test_execute_payment_uses_generous_api_timeout(provider, order):
+    # euPago's create call sometimes takes ~15s; 30s total used to be too tight a margin.
+    payment = make_payment(order, provider.identifier)
+    responses.add(responses.POST, MULTIBANCO_URL["sandbox"], json=SUCCESS, status=200)
+
+    provider.execute_payment(RequestFactory().post("/"), payment)
+
+    assert responses.calls[0].request.req_kwargs["timeout"] == API_TIMEOUT
+    assert API_TIMEOUT[1] > 30
 
 
 @pytest.mark.django_db
